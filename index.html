@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>月亮流沙 · 崽崽</title>
+  <style>
+    :root {
+      --bg: #000000;
+      --canvas-bg: #000000;
+      --card-bg: rgba(18, 18, 22, 0.92);
+      --card-border: rgba(255, 255, 255, 0.12);
+      --accent-gold: #ffcb1e;
+      --text-main: #f0f0f0;
+      --text-muted: #8e8e93;
+      --tag-bg: rgba(0, 0, 0, 0.6);
+      --tag-border: rgba(255, 255, 255, 0.12);
+      --input-bg: rgba(255, 255, 255, 0.08);
+      --input-border: rgba(255, 255, 255, 0.15);
+    }
+
+    body.theme-light {
+      --bg: #ffffff;
+      --canvas-bg: #ffffff;
+      --card-bg: rgba(255, 255, 255, 0.94);
+      --card-border: rgba(0, 0, 0, 0.12);
+      --accent-gold: #c28e00;
+      --text-main: #1c1c1e;
+      --text-muted: #636366;
+      --tag-bg: rgba(255, 255, 255, 0.88);
+      --tag-border: rgba(0, 0, 0, 0.12);
+      --input-bg: rgba(0, 0, 0, 0.05);
+      --input-border: rgba(0, 0, 0, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 100vw;
+      height: 100vh;
+      transition: background-color 0.3s ease;
+    }
+
+    /* 整体分栏布局容器（PC 端左右排布，绝不遮挡画布） */
+    .app-layout {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      justify-content: center;
+      width: 100vw;
+      height: 100vh;
+      gap: 20px;
+      padding: 16px;
+      position: relative;
+    }
+
+    /* 3:4 主画框容器 */
+    #canvas-container {
+      position: relative;
+      height: min(94vh, 920px);
+      width: calc(min(94vh, 920px) * 0.75); /* 精确 3:4 比例 */
+      background: var(--canvas-bg);
+      border-radius: 16px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
+      overflow: hidden;
+      flex-shrink: 0;
+      transition: background-color 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    body.theme-light #canvas-container {
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 顶部导航状态栏 */
+    .top-bar {
+      position: absolute;
+      top: 18px;
+      left: 20px;
+      right: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .title-tag {
+      font-size: 13px;
+      letter-spacing: 0.8px;
+      color: var(--text-main);
+      font-weight: 500;
+      background: var(--tag-bg);
+      padding: 5px 12px;
+      border-radius: 20px;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--tag-border);
+    }
+
+    .panel-toggle-btn {
+      pointer-events: auto;
+      background: var(--tag-bg);
+      border: 1px solid var(--tag-border);
+      color: var(--text-main);
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      transition: all 0.2s ease;
+    }
+
+    .panel-toggle-btn:hover {
+      background: var(--input-border);
+    }
+
+    /* PC 端独立控制面板（位于画布右侧，独立占位，展开时完全不遮挡主图） */
+    .control-panel {
+      width: 295px;
+      height: min(94vh, 920px);
+      overflow-y: auto;
+      background: var(--card-bg);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.4);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      flex-shrink: 0;
+      transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+                  opacity 0.25s ease,
+                  padding 0.3s ease,
+                  margin 0.3s ease;
+    }
+
+    .control-panel::-webkit-scrollbar {
+      width: 4px;
+    }
+    .control-panel::-webkit-scrollbar-thumb {
+      background: rgba(128, 128, 128, 0.35);
+      border-radius: 4px;
+    }
+
+    /* PC 端折叠：平滑收纳至 0 宽度 */
+    .control-panel.collapsed {
+      width: 0;
+      padding-left: 0;
+      padding-right: 0;
+      opacity: 0;
+      border: none;
+      margin-left: -20px; /* 抵消布局 gap */
+      pointer-events: none;
+      overflow: hidden;
+    }
+
+    .panel-section-title {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      color: var(--accent-gold);
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 5px;
+      margin-top: 4px;
+    }
+
+    .control-item {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .control-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .control-label span:last-child {
+      color: var(--text-main);
+      font-family: monospace;
+      font-weight: 500;
+    }
+
+    select, input[type="range"] {
+      width: 100%;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 8px;
+      color: var(--text-main);
+      font-size: 11px;
+      padding: 6px 8px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    select option {
+      background: #18181b;
+      color: #fff;
+    }
+
+    body.theme-light select option {
+      background: #ffffff;
+      color: #000;
+    }
+
+    input[type="range"] {
+      padding: 0;
+      height: 4px;
+      accent-color: var(--accent-gold);
+    }
+
+    .color-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .color-picker-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: 1;
+      font-size: 11px;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 8px;
+      padding: 4px 8px;
+    }
+
+    .color-picker-wrap input[type="color"] {
+      -webkit-appearance: none;
+      border: none;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      cursor: pointer;
+      background: none;
+      padding: 0;
+    }
+
+    .color-picker-wrap input[type="color"]::-webkit-color-swatch-wrapper {
+      padding: 0;
+    }
+    .color-picker-wrap input[type="color"]::-webkit-color-swatch {
+      border: 1px solid rgba(128, 128, 128, 0.4);
+      border-radius: 50%;
+    }
+
+    .btn-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .action-btn {
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      color: var(--text-main);
+      border-radius: 8px;
+      padding: 6px 8px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: center;
+    }
+
+    .action-btn:hover {
+      background: var(--input-border);
+    }
+
+    .action-btn.active {
+      background: rgba(255, 203, 30, 0.18);
+      border-color: var(--accent-gold);
+      color: var(--accent-gold);
+      font-weight: 600;
+    }
+
+    .drop-hint {
+      font-size: 10px;
+      color: var(--text-muted);
+      text-align: center;
+      margin-top: 2px;
+      line-height: 1.4;
+    }
+
+    /* 移动端自适应：宽度小于 860px 时转为弹性自适应抽屉 */
+    @media (max-width: 860px) {
+      .app-layout {
+        padding: 0;
+        gap: 0;
+      }
+      .top-bar {
+        top: 12px;
+        left: 12px;
+        right: 12px;
+        gap: 8px;
+      }
+      .title-tag {
+        font-size: 11px;
+        padding: 4px 10px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex-shrink: 1;
+      }
+      .panel-toggle-btn {
+        font-size: 11px;
+        padding: 5px 12px;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      #canvas-container {
+        width: 100vw;
+        height: 100vh;
+        border-radius: 0;
+      }
+      .control-panel {
+        position: absolute;
+        top: 54px;
+        right: 12px;
+        left: 12px;
+        width: auto;
+        height: auto;
+        max-height: calc(100vh - 70px);
+        z-index: 50;
+        margin-left: 0;
+      }
+      .control-panel.collapsed {
+        width: auto;
+        transform: translateY(-12px);
+        opacity: 0;
+        margin-left: 0;
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="app-layout">
+    <!-- 主画框容器（保持 3:4 比例，无任何遮挡） -->
+    <div id="canvas-container">
+      <div class="top-bar">
+        <div class="title-tag">🌕 月亮流沙 · 崽崽 Processing 作品</div>
+        <button id="toggle-panel" class="panel-toggle-btn">参数面板</button>
+      </div>
+    </div>
+
+    <!-- 控制面板（PC 端独立排列在右侧） -->
+    <aside id="control-panel" class="control-panel collapsed">
+      
+      <!-- 1. 背景与月亮设置 -->
+      <div class="panel-section-title">色彩与环境</div>
+
+      <div class="control-item">
+        <div class="control-label"><span>背景主题</span></div>
+        <div class="btn-group">
+          <button id="theme-dark" class="action-btn active">纯黑背景</button>
+          <button id="theme-light" class="action-btn">纯白背景</button>
+        </div>
+      </div>
+
+      <div class="control-item">
+        <div class="control-label"><span>月亮颜色</span></div>
+        <div class="color-picker-wrap">
+          <input type="color" id="moon-color-picker" value="#ffcb1e">
+          <span>选择月色</span>
+        </div>
+      </div>
+
+      <!-- 2. 双色粒子系统 -->
+      <div class="panel-section-title">双色粒子流沙</div>
+
+      <div class="control-item">
+        <div class="control-label"><span>粒子混色</span></div>
+        <div class="color-row">
+          <div class="color-picker-wrap">
+            <input type="color" id="color-picker-a" value="#ffcb1e">
+            <span>主色</span>
+          </div>
+          <div class="color-picker-wrap">
+            <input type="color" id="color-picker-b" value="#ffffff">
+            <span>副色</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="control-item">
+        <div class="control-label">
+          <span>主副色配比</span>
+          <span id="ratio-val">70% : 30%</span>
+        </div>
+        <input id="ratio-slider" type="range" min="0" max="1" step="0.05" value="0.7">
+      </div>
+
+      <div class="control-item">
+        <div class="control-label">
+          <span>粒子密度</span>
+          <span id="count-val">4200</span>
+        </div>
+        <input id="count-slider" type="range" min="1500" max="6500" step="100" value="4200">
+      </div>
+
+      <!-- 3. 几何形状与空间姿态 -->
+      <div class="panel-section-title">三维形状与空间姿态</div>
+
+      <div class="control-item">
+        <div class="control-label"><span>几何形状</span></div>
+        <select id="preset-select">
+          <option value="classic" selected>阶梯错落拱券</option>
+          <option value="wineglass">独酌高脚杯 (酒杯造型)</option>
+          <option value="hourglass">双曲沙漏 (流砂造型)</option>
+          <option value="colonnade">罗马拱门长廊</option>
+          <option value="custom" disabled>自定义 OBJ 模型</option>
+        </select>
+      </div>
+
+      <div class="control-item">
+        <div class="control-label">
+          <span>形状大小</span>
+          <span id="scale-val">100%</span>
+        </div>
+        <input id="scale-slider" type="range" min="0.6" max="1.1" step="0.05" value="1.0">
+      </div>
+
+      <div class="control-item">
+        <div class="control-label">
+          <span>水平偏移 (X)</span>
+          <span id="pos-x-val">0</span>
+        </div>
+        <input id="pos-x-slider" type="range" min="-90" max="90" step="2" value="0">
+      </div>
+
+      <div class="control-item">
+        <div class="control-label">
+          <span>落差高度 (Y)</span>
+          <span id="pos-y-val">0</span>
+        </div>
+        <input id="pos-y-slider" type="range" min="-120" max="100" step="2" value="0">
+      </div>
+
+      <div class="control-item">
+        <div class="control-label">
+          <span>俯仰倾角 (Pitch)</span>
+          <span id="tilt-pitch-val">0°</span>
+        </div>
+        <input id="tilt-pitch-slider" type="range" min="-40" max="40" step="2" value="0">
+      </div>
+
+      <div class="control-item">
+        <div class="control-label">
+          <span>初始朝向 (Yaw)</span>
+          <span id="facing-yaw-val">0°</span>
+        </div>
+        <input id="facing-yaw-slider" type="range" min="0" max="360" step="5" value="0">
+      </div>
+
+      <!-- 4. 动力学控制 -->
+      <div class="panel-section-title">动力学与视角</div>
+
+      <div class="control-item">
+        <div class="control-label">
+          <span>自转速度</span>
+          <span id="speed-val">0.007</span>
+        </div>
+        <input id="speed-slider" type="range" min="0" max="0.025" step="0.001" value="0.007">
+      </div>
+
+      <div class="control-item">
+        <div class="control-label">
+          <span>重力加速度</span>
+          <span id="gravity-val">0.12</span>
+        </div>
+        <input id="gravity-slider" type="range" min="0.04" max="0.30" step="0.01" value="0.12">
+      </div>
+
+      <div class="btn-group">
+        <button id="toggle-rotate" class="action-btn active">自转: 运行中</button>
+        <button id="toggle-geom" class="action-btn">实体轮廓: 隐形</button>
+      </div>
+
+      <div class="btn-group">
+        <button id="reset-transform" class="action-btn">重置物体姿态</button>
+        <button id="reset-camera" class="action-btn">复位 3D 视角</button>
+      </div>
+
+      <div class="drop-hint">
+        💡 按住鼠标左键可 360° 旋转视角，滚轮缩放<br>
+        支持直接拖入外部 .obj 3D 模型
+      </div>
+    </aside>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
