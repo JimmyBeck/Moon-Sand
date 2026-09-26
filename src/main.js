@@ -426,6 +426,51 @@ function setupUI() {
   if (ratioPearl) ratioPearl.addEventListener('input', updateRatioUI);
   if (ratioGem) ratioGem.addEventListener('input', updateRatioUI);
 
+  // 3D 金樽碰撞体控制绑定 (方案 A / 方案 B / 关闭，高度与弹性)
+  const glassModeSelect = document.getElementById('gold-glass-mode');
+  const glassStatus = document.getElementById('gold-glass-status');
+  const glassYSlider = document.getElementById('gold-glass-y-slider');
+  const glassYVal = document.getElementById('gold-glass-y-val');
+  const glassRestitutionSlider = document.getElementById('gold-glass-restitution-slider');
+  const glassRestitutionVal = document.getElementById('gold-glass-restitution-val');
+
+  if (glassModeSelect) {
+    glassModeSelect.addEventListener('change', (e) => {
+      const mode = e.target.value;
+      if (goldFallSystem) {
+        goldFallSystem.setGlassMode(mode);
+        // 同步高度滑块到推荐高度
+        if (mode === 'schemeA') {
+          if (glassYSlider) glassYSlider.value = -95;
+          if (glassYVal) glassYVal.innerText = '-95';
+          if (glassStatus) glassStatus.innerText = '方案 A';
+        } else if (mode === 'schemeB') {
+          if (glassYSlider) glassYSlider.value = -110;
+          if (glassYVal) glassYVal.innerText = '-110';
+          if (glassStatus) glassStatus.innerText = '方案 B';
+        } else {
+          if (glassStatus) glassStatus.innerText = '已关闭';
+        }
+      }
+    });
+  }
+
+  if (glassYSlider) {
+    glassYSlider.addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
+      if (goldFallSystem) goldFallSystem.setGlassPosY(v);
+      if (glassYVal) glassYVal.innerText = v;
+    });
+  }
+
+  if (glassRestitutionSlider) {
+    glassRestitutionSlider.addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
+      if (goldFallSystem) goldFallSystem.setGlassRestitution(v);
+      if (glassRestitutionVal) glassRestitutionVal.innerText = v.toFixed(2);
+    });
+  }
+
   // 1. 月亮颜色
   const moonColorPicker = document.getElementById('moon-color-picker');
   if (moonColorPicker) {

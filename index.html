@@ -458,6 +458,39 @@
             <input id="gold-ratio-gem" type="range" min="0" max="100" step="5" value="20">
           </div>
         </div>
+
+        <!-- 3D 碰撞金樽 (Wine Glass Chalice Obstacle) -->
+        <div style="margin-top:12px; padding:10px 12px; background:rgba(255,203,30,0.06); border-radius:6px; border:1px solid rgba(255,203,30,0.18);">
+          <div class="control-label" style="margin-bottom:8px;">
+            <span style="font-weight:600; color:var(--accent-gold);">👑 3D 金樽碰撞体</span>
+            <span id="gold-glass-status" style="font-size:11px; color:var(--accent-gold); font-weight:600;">方案 A</span>
+          </div>
+
+          <div class="control-item" style="margin-bottom:8px;">
+            <div class="control-label" style="font-size:11px;"><span>碰撞模式</span></div>
+            <select id="gold-glass-mode">
+              <option value="schemeA" selected>方案 A：倾斜漫溢倾泻 (Tilted Spill)</option>
+              <option value="schemeB">方案 B：端正盛装盛满 (Upright Overflow)</option>
+              <option value="none">关闭碰撞杯 (自由下落)</option>
+            </select>
+          </div>
+
+          <div class="control-item" style="margin-bottom:6px;">
+            <div class="control-label" style="font-size:11px;">
+              <span>酒杯高度 (Y 轴)</span>
+              <span id="gold-glass-y-val">-95</span>
+            </div>
+            <input id="gold-glass-y-slider" type="range" min="-150" max="-50" step="5" value="-95">
+          </div>
+
+          <div class="control-item" style="margin-bottom:0;">
+            <div class="control-label" style="font-size:11px;">
+              <span>碰撞弹性系数</span>
+              <span id="gold-glass-restitution-val">0.65</span>
+            </div>
+            <input id="gold-glass-restitution-slider" type="range" min="0.2" max="0.95" step="0.05" value="0.65">
+          </div>
+        </div>
       </div>
 
       <!-- 1. 背景与环境设置 -->
