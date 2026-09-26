@@ -367,15 +367,100 @@
     <!-- 主画框容器（保持 3:4 比例，无任何遮挡） -->
     <div id="canvas-container">
       <div class="top-bar">
-        <div class="title-tag">🌕 月亮流沙 · 崽崽 Processing 作品</div>
-        <button id="toggle-panel" class="panel-toggle-btn">参数面板</button>
+        <div class="title-tag">👑 蒙尘之罪 · 珠宝下落与流沙消融</div>
+        <div style="display:flex; gap:8px;">
+          <button id="top-btn-pause" class="panel-toggle-btn" style="color:var(--accent-gold); border-color:var(--accent-gold);">⏸ 暂停 (Space)</button>
+          <button id="toggle-panel" class="panel-toggle-btn">参数面板</button>
+        </div>
       </div>
     </div>
 
     <!-- 控制面板（PC 端独立排列在右侧） -->
     <aside id="control-panel" class="control-panel collapsed">
       
-      <!-- 1. 背景与月亮设置 -->
+      <!-- 0. 蒙尘之罪·专属动态参数 -->
+      <div id="goldfall-section">
+        <div class="panel-section-title">蒙尘之罪流沙控制</div>
+
+        <!-- 时间控制与时停 -->
+        <div class="control-item">
+          <div class="control-label"><span>时间状态</span></div>
+          <button id="btn-time-pause" class="action-btn" style="width:100%; font-size:12px; font-weight:600; padding:8px 0; background:rgba(255,203,30,0.18); border-color:var(--accent-gold); color:var(--accent-gold); cursor:pointer;">
+            ⏸ 暂停 / 时间停止 (Space)
+          </button>
+        </div>
+
+        <div class="control-item">
+          <div class="control-label">
+            <span>时间流速 (速度倍率)</span>
+            <span id="gold-timescale-val">1.0x</span>
+          </div>
+          <input id="gold-timescale-slider" type="range" min="0.1" max="2.0" step="0.05" value="1.0">
+        </div>
+
+        <div class="drop-hint" style="color:var(--accent-gold); font-size:10px; margin-top:-2px; margin-bottom:6px; line-height:1.4;">
+          💡 提示：暂停后可用鼠标拖拽场景 360° 近距离审视金币浮雕与宝石切面
+        </div>
+
+        <!-- 流沙形态与频度 -->
+        <div class="control-item">
+          <div class="control-label">
+            <span>流沙整体宽度</span>
+            <span id="gold-width-val">90 px</span>
+          </div>
+          <input id="gold-width-slider" type="range" min="40" max="240" step="5" value="90">
+        </div>
+
+        <div class="control-item">
+          <div class="control-label">
+            <span>下落生成频度</span>
+            <span id="gold-rate-val">2.5 /s</span>
+          </div>
+          <input id="gold-rate-slider" type="range" min="0.8" max="5.0" step="0.2" value="2.5">
+        </div>
+
+        <div class="control-item">
+          <div class="control-label">
+            <span>流沙消融高度</span>
+            <span id="gold-dissolve-val">-80</span>
+          </div>
+          <input id="gold-dissolve-slider" type="range" min="-180" max="60" step="10" value="-80">
+        </div>
+
+        <!-- 珠宝品类配比 -->
+        <div style="margin-top:12px; padding:10px 12px; background:rgba(255,203,30,0.06); border-radius:6px; border:1px solid rgba(255,203,30,0.18);">
+          <div class="control-label" style="margin-bottom:8px;">
+            <span style="font-weight:600; color:var(--accent-gold);">珠宝品类配比</span>
+            <span id="gold-ratio-summary" style="font-size:11px; color:var(--accent-gold); font-weight:600;">50% : 30% : 20%</span>
+          </div>
+
+          <div class="control-item" style="margin-bottom:6px;">
+            <div class="control-label" style="font-size:11px;">
+              <span>🪙 金币比重</span>
+              <span id="ratio-coin-val">50%</span>
+            </div>
+            <input id="gold-ratio-coin" type="range" min="0" max="100" step="5" value="50">
+          </div>
+
+          <div class="control-item" style="margin-bottom:6px;">
+            <div class="control-label" style="font-size:11px;">
+              <span>⚪ 珍珠比重</span>
+              <span id="ratio-pearl-val">30%</span>
+            </div>
+            <input id="gold-ratio-pearl" type="range" min="0" max="100" step="5" value="30">
+          </div>
+
+          <div class="control-item" style="margin-bottom:0;">
+            <div class="control-label" style="font-size:11px;">
+              <span>💎 宝石比重 (红/绿)</span>
+              <span id="ratio-gem-val">20%</span>
+            </div>
+            <input id="gold-ratio-gem" type="range" min="0" max="100" step="5" value="20">
+          </div>
+        </div>
+      </div>
+
+      <!-- 1. 背景与环境设置 -->
       <div class="panel-section-title">色彩与环境</div>
 
       <div class="control-item">
@@ -386,7 +471,7 @@
         </div>
       </div>
 
-      <div class="control-item">
+      <div class="control-item" id="moon-color-wrap">
         <div class="control-label"><span>月亮颜色</span></div>
         <div class="color-picker-wrap">
           <input type="color" id="moon-color-picker" value="#ffcb1e">
@@ -394,46 +479,49 @@
         </div>
       </div>
 
-      <!-- 2. 双色粒子系统 -->
-      <div class="panel-section-title">双色粒子流沙</div>
+      <!-- 2. 双色粒子系统 (经典预设专属) -->
+      <div id="classic-particle-section">
+        <div class="panel-section-title">双色粒子流沙</div>
 
-      <div class="control-item">
-        <div class="control-label"><span>粒子混色</span></div>
-        <div class="color-row">
-          <div class="color-picker-wrap">
-            <input type="color" id="color-picker-a" value="#ffcb1e">
-            <span>主色</span>
+        <div class="control-item">
+          <div class="control-label"><span>粒子混色</span></div>
+          <div class="color-row">
+            <div class="color-picker-wrap">
+              <input type="color" id="color-picker-a" value="#ffcb1e">
+              <span>主色</span>
+            </div>
+            <div class="color-picker-wrap">
+              <input type="color" id="color-picker-b" value="#ffffff">
+              <span>副色</span>
+            </div>
           </div>
-          <div class="color-picker-wrap">
-            <input type="color" id="color-picker-b" value="#ffffff">
-            <span>副色</span>
+        </div>
+
+        <div class="control-item">
+          <div class="control-label">
+            <span>主副色配比</span>
+            <span id="ratio-val">70% : 30%</span>
           </div>
+          <input id="ratio-slider" type="range" min="0" max="1" step="0.05" value="0.7">
         </div>
-      </div>
 
-      <div class="control-item">
-        <div class="control-label">
-          <span>主副色配比</span>
-          <span id="ratio-val">70% : 30%</span>
+        <div class="control-item">
+          <div class="control-label">
+            <span>粒子密度</span>
+            <span id="count-val">4200</span>
+          </div>
+          <input id="count-slider" type="range" min="1500" max="6500" step="100" value="4200">
         </div>
-        <input id="ratio-slider" type="range" min="0" max="1" step="0.05" value="0.7">
-      </div>
-
-      <div class="control-item">
-        <div class="control-label">
-          <span>粒子密度</span>
-          <span id="count-val">4200</span>
-        </div>
-        <input id="count-slider" type="range" min="1500" max="6500" step="100" value="4200">
       </div>
 
       <!-- 3. 几何形状与空间姿态 -->
-      <div class="panel-section-title">三维形状与空间姿态</div>
+      <div class="panel-section-title">三维形状预设</div>
 
       <div class="control-item">
         <div class="control-label"><span>几何形状</span></div>
         <select id="preset-select">
-          <option value="classic" selected>阶梯错落拱券</option>
+          <option value="goldfall" selected>👑 蒙尘之罪 (金币/珍珠/宝石流沙)</option>
+          <option value="classic">阶梯错落拱券</option>
           <option value="wineglass">独酌高脚杯 (酒杯造型)</option>
           <option value="hourglass">双曲沙漏 (流砂造型)</option>
           <option value="colonnade">罗马拱门长廊</option>
@@ -441,79 +529,88 @@
         </select>
       </div>
 
-      <div class="control-item">
-        <div class="control-label">
-          <span>形状大小</span>
-          <span id="scale-val">100%</span>
+      <div id="classic-transform-wrap">
+        <div class="control-item">
+          <div class="control-label">
+            <span>形状大小</span>
+            <span id="scale-val">100%</span>
+          </div>
+          <input id="scale-slider" type="range" min="0.6" max="1.1" step="0.05" value="1.0">
         </div>
-        <input id="scale-slider" type="range" min="0.6" max="1.1" step="0.05" value="1.0">
-      </div>
 
-      <div class="control-item">
-        <div class="control-label">
-          <span>水平偏移 (X)</span>
-          <span id="pos-x-val">0</span>
+        <div class="control-item">
+          <div class="control-label">
+            <span>水平偏移 (X)</span>
+            <span id="pos-x-val">0</span>
+          </div>
+          <input id="pos-x-slider" type="range" min="-90" max="90" step="2" value="0">
         </div>
-        <input id="pos-x-slider" type="range" min="-90" max="90" step="2" value="0">
-      </div>
 
-      <div class="control-item">
-        <div class="control-label">
-          <span>落差高度 (Y)</span>
-          <span id="pos-y-val">0</span>
+        <div class="control-item">
+          <div class="control-label">
+            <span>落差高度 (Y)</span>
+            <span id="pos-y-val">0</span>
+          </div>
+          <input id="pos-y-slider" type="range" min="-120" max="100" step="2" value="0">
         </div>
-        <input id="pos-y-slider" type="range" min="-120" max="100" step="2" value="0">
-      </div>
 
-      <div class="control-item">
-        <div class="control-label">
-          <span>俯仰倾角 (Pitch)</span>
-          <span id="tilt-pitch-val">0°</span>
+        <div class="control-item">
+          <div class="control-label">
+            <span>俯仰倾角 (Pitch)</span>
+            <span id="tilt-pitch-val">0°</span>
+          </div>
+          <input id="tilt-pitch-slider" type="range" min="-40" max="40" step="2" value="0">
         </div>
-        <input id="tilt-pitch-slider" type="range" min="-40" max="40" step="2" value="0">
-      </div>
 
-      <div class="control-item">
-        <div class="control-label">
-          <span>初始朝向 (Yaw)</span>
-          <span id="facing-yaw-val">0°</span>
+        <div class="control-item">
+          <div class="control-label">
+            <span>初始朝向 (Yaw)</span>
+            <span id="facing-yaw-val">0°</span>
+          </div>
+          <input id="facing-yaw-slider" type="range" min="0" max="360" step="5" value="0">
         </div>
-        <input id="facing-yaw-slider" type="range" min="0" max="360" step="5" value="0">
       </div>
 
-      <!-- 4. 动力学控制 -->
-      <div class="panel-section-title">动力学与视角</div>
+      <!-- 4. 动力学控制 (经典预设专属) -->
+      <div id="classic-dynamics-wrap">
+        <div class="panel-section-title">动力学控制</div>
 
-      <div class="control-item">
-        <div class="control-label">
-          <span>自转速度</span>
-          <span id="speed-val">0.007</span>
+        <div class="control-item">
+          <div class="control-label">
+            <span>自转速度</span>
+            <span id="speed-val">0.007</span>
+          </div>
+          <input id="speed-slider" type="range" min="0" max="0.025" step="0.001" value="0.007">
         </div>
-        <input id="speed-slider" type="range" min="0" max="0.025" step="0.001" value="0.007">
-      </div>
 
-      <div class="control-item">
-        <div class="control-label">
-          <span>重力加速度</span>
-          <span id="gravity-val">0.12</span>
+        <div class="control-item">
+          <div class="control-label">
+            <span>重力加速度</span>
+            <span id="gravity-val">0.12</span>
+          </div>
+          <input id="gravity-slider" type="range" min="0.04" max="0.30" step="0.01" value="0.12">
         </div>
-        <input id="gravity-slider" type="range" min="0.04" max="0.30" step="0.01" value="0.12">
+
+        <div class="btn-group">
+          <button id="toggle-rotate" class="action-btn active">自转: 运行中</button>
+          <button id="toggle-geom" class="action-btn">实体轮廓: 隐形</button>
+        </div>
+
+        <div class="btn-group">
+          <button id="reset-transform" class="action-btn">重置物体姿态</button>
+        </div>
       </div>
 
-      <div class="btn-group">
-        <button id="toggle-rotate" class="action-btn active">自转: 运行中</button>
-        <button id="toggle-geom" class="action-btn">实体轮廓: 隐形</button>
-      </div>
-
-      <div class="btn-group">
-        <button id="reset-transform" class="action-btn">重置物体姿态</button>
-        <button id="reset-camera" class="action-btn">复位 3D 视角</button>
+      <div style="margin-top:14px;">
+        <button id="reset-camera" class="action-btn" style="width:100%;">复位 3D 视角</button>
       </div>
 
       <div class="drop-hint">
         💡 按住鼠标左键可 360° 旋转视角，滚轮缩放<br>
-        支持直接拖入外部 .obj 3D 模型
+        随时按键盘空格键（Space）暂停定格画面
       </div>
+
+
     </aside>
   </div>
 
