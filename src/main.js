@@ -426,31 +426,26 @@ function setupUI() {
   if (ratioPearl) ratioPearl.addEventListener('input', updateRatioUI);
   if (ratioGem) ratioGem.addEventListener('input', updateRatioUI);
 
-  // 3D 金樽碰撞体控制绑定 (方案 A / 方案 B / 关闭，高度与弹性)
-  const glassModeSelect = document.getElementById('gold-glass-mode');
-  const glassStatus = document.getElementById('gold-glass-status');
+  // 3D 金樽导流体控制绑定 (开关、高度、倾角、减震缓冲)
+  const glassToggleBtn = document.getElementById('gold-glass-toggle-btn');
   const glassYSlider = document.getElementById('gold-glass-y-slider');
   const glassYVal = document.getElementById('gold-glass-y-val');
-  const glassRestitutionSlider = document.getElementById('gold-glass-restitution-slider');
-  const glassRestitutionVal = document.getElementById('gold-glass-restitution-val');
+  const glassPitchSlider = document.getElementById('gold-glass-pitch-slider');
+  const glassPitchVal = document.getElementById('gold-glass-pitch-val');
+  const glassCushionSlider = document.getElementById('gold-glass-cushion-slider');
+  const glassCushionVal = document.getElementById('gold-glass-cushion-val');
 
-  if (glassModeSelect) {
-    glassModeSelect.addEventListener('change', (e) => {
-      const mode = e.target.value;
-      if (goldFallSystem) {
-        goldFallSystem.setGlassMode(mode);
-        // 同步高度滑块到推荐高度
-        if (mode === 'schemeA') {
-          if (glassYSlider) glassYSlider.value = -95;
-          if (glassYVal) glassYVal.innerText = '-95';
-          if (glassStatus) glassStatus.innerText = '方案 A';
-        } else if (mode === 'schemeB') {
-          if (glassYSlider) glassYSlider.value = -110;
-          if (glassYVal) glassYVal.innerText = '-110';
-          if (glassStatus) glassStatus.innerText = '方案 B';
-        } else {
-          if (glassStatus) glassStatus.innerText = '已关闭';
-        }
+  let glassEnabled = true;
+  if (glassToggleBtn) {
+    glassToggleBtn.addEventListener('click', () => {
+      glassEnabled = !glassEnabled;
+      if (goldFallSystem) goldFallSystem.setGlassEnabled(glassEnabled);
+      if (glassEnabled) {
+        glassToggleBtn.classList.add('active');
+        glassToggleBtn.innerText = '已启用';
+      } else {
+        glassToggleBtn.classList.remove('active');
+        glassToggleBtn.innerText = '已关闭';
       }
     });
   }
@@ -463,11 +458,19 @@ function setupUI() {
     });
   }
 
-  if (glassRestitutionSlider) {
-    glassRestitutionSlider.addEventListener('input', (e) => {
+  if (glassPitchSlider) {
+    glassPitchSlider.addEventListener('input', (e) => {
       const v = parseFloat(e.target.value);
-      if (goldFallSystem) goldFallSystem.setGlassRestitution(v);
-      if (glassRestitutionVal) glassRestitutionVal.innerText = v.toFixed(2);
+      if (goldFallSystem) goldFallSystem.setGlassPitch(v);
+      if (glassPitchVal) glassPitchVal.innerText = `${v}°`;
+    });
+  }
+
+  if (glassCushionSlider) {
+    glassCushionSlider.addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
+      if (goldFallSystem) goldFallSystem.setGlassCushion(v);
+      if (glassCushionVal) glassCushionVal.innerText = v.toFixed(2);
     });
   }
 

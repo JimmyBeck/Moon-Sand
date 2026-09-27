@@ -43,17 +43,17 @@ export class GoldFallSystem {
     this.activeParticleCount = 0;
     this.particlePool = [];
 
-    // 3D 碰撞金樽（Wine Glass Obstacle）
+    // 3D 碰撞金樽（实心导流障碍物 Solid Deflector Spillway）
     this.glassGroup = new THREE.Group();
     this.glassGroup.name = 'WineGlassObstacle';
     this.group.add(this.glassGroup);
 
-    this.glassMode = 'schemeA'; // 'schemeA' (倾斜漫溢) | 'schemeB' (端正盛装) | 'none' (关闭)
+    this.glassEnabled = true;
     this.glassPosY = -95;
-    this.glassPitch = 0.52;      // Scheme A: 约 30 度前倾，迎接下落流沙并倾泻
-    this.glassRoll = -0.06;
-    this.glassRestitution = 0.65; // 碰撞弹性系数
-    this.dissolveY = -150;       // Scheme A/B 允许跌落至杯口下方消融
+    this.glassPitch = 0.42;       // 约 24 度前倾，构成顺畅自排水导流斜坡
+    this.glassRoll = -0.04;
+    this.glassCushion = 0.04;     // 柔性减震吸能系数（0.04 = 水/流沙质感，微弱缓冲着陆，杜绝刚性弹跳）
+    this.dissolveY = -150;        // 允许倾泻出杯口后在下方消融
 
     this.glassPos = new THREE.Vector3(0, this.glassPosY, 0);
     this.glassEuler = new THREE.Euler(this.glassPitch, 0, this.glassRoll, 'YXZ');
@@ -850,7 +850,7 @@ export class GoldFallSystem {
    * 4.6 局部解析碰撞检测求解器
    * ---------------------------------------------------- */
   _solveGlassCollision(worldPos, radius) {
-    if (this.glassMode === 'none') return null;
+    if (!this.glassEnabled) return null;
 
     // 转换至金樽本地坐标
     const lpX = worldPos.x - this.glassPos.x;
@@ -1262,8 +1262,9 @@ export class GoldFallSystem {
       const curPos = e.mesh.position;
 
       // 3D 金樽物理碰撞检测与动力学响应（宝石外接碰撞半径提升至 11.5，杜绝陷入微隙）
+      // 3D 实心导流金樽物理碰撞与柔性水状减震顺流响应
       const colRadius = e.type === 'coin' ? 13.5 : (e.type === 'pearl' ? 5.0 * e.baseScale : 11.5 * e.baseScale);
-      if (this.glassMode !== 'none') {
+      if (this.glassEnabled) {
         const hit = this._solveGlassCollision(curPos, colRadius);
         if (hit) {
           // 1. 位置外科修正（沿接触法线推挤出表面，避免穿模）
@@ -1271,88 +1272,71 @@ export class GoldFallSystem {
           curPos.y += hit.normWorldY * hit.pen;
           curPos.z += hit.normWorldZ * hit.pen;
 
-          // 2. 速度分解为切向摩擦分量与法向恢复分量
+          // 2. 速度分解为切向摩擦分量与柔性吸能法向减震
           const vn = e.vx * hit.normWorldX + e.vy * hit.normWorldY + e.vz * hit.normWorldZ;
           if (vn < 0) {
             const vtx = e.vx - hit.normWorldX * vn;
             const vty = e.vy - hit.normWorldY * vn;
             const vtz = e.vz - hit.normWorldZ * vn;
 
-            let matRestitution = this.glassRestitution;
-            if (e.type === 'pearl') matRestitution *= 0.95;
-            else if (e.type === 'gem' || e.type === 'emerald' || e.type === 'ruby') matRestitution *= 0.82;
-            else matRestitution *= 0.60;
-
-            // 动摩擦与切向滑移：微小切向阻尼 (0.04)，保留真实的固体滑移惯性，杜绝切向动能被压死
+            // 柔性减震着陆：吸收绝大部分法向冲击，转为类流沙/水体的柔和接住（零/微弱弹跳）
             const friction = 0.04;
-            const bounceVn = -vn * matRestitution;
+            const bounceVn = -vn * this.glassCushion;
 
             e.vx = vtx * (1 - friction) + hit.normWorldX * bounceVn;
             e.vy = vty * (1 - friction) + hit.normWorldY * bounceVn;
             e.vz = vtz * (1 - friction) + hit.normWorldZ * bounceVn;
 
-            // 只有明显撞击 (|vn| > 25) 才激发一次旋转角冲量，微小接触绝不叠加
-            if (Math.abs(vn) > 25) {
-              e.rotSpeed.x += (Math.random() - 0.5) * 2.5;
-              e.rotSpeed.y += (Math.random() - 0.5) * 2.5;
-              e.rotSpeed.z += (Math.random() - 0.5) * 2.5;
-            }
+            // 沿曲面滚动角阻尼：杜绝刚性空转，贴合曲面自然滚滑
+            e.rotSpeed.x *= 0.982;
+            e.rotSpeed.y *= 0.982;
+            e.rotSpeed.z *= 0.982;
 
-            // 撞击迸发金沙星芒
-            if (Math.abs(vn) > 28) {
+            // 撞击迸发微细金沙星芒（能量释放与流体飞溅感）
+            if (Math.abs(vn) > 16) {
               const sparkCount = e.type === 'coin' ? 3 : 2;
               for (let s = 0; s < sparkCount; s++) {
                 const sandCol = this._getGoldSandColor();
                 this.emitParticle(
-                  curPos.x + (Math.random() - 0.5) * 4,
-                  curPos.y + (Math.random() - 0.5) * 4,
-                  curPos.z + (Math.random() - 0.5) * 4,
-                  hit.normWorldX * (15 + Math.random() * 25) + (Math.random() - 0.5) * 15,
-                  hit.normWorldY * (15 + Math.random() * 25) + (Math.random() - 0.5) * 15,
-                  hit.normWorldZ * (15 + Math.random() * 25) + (Math.random() - 0.5) * 15,
+                  curPos.x + (Math.random() - 0.5) * 3,
+                  curPos.y + (Math.random() - 0.5) * 3,
+                  curPos.z + (Math.random() - 0.5) * 3,
+                  hit.normWorldX * (12 + Math.random() * 20) + (Math.random() - 0.5) * 12,
+                  hit.normWorldY * (12 + Math.random() * 20) + (Math.random() - 0.5) * 12,
+                  hit.normWorldZ * (12 + Math.random() * 20) + (Math.random() - 0.5) * 12,
                   sandCol,
-                  3.0 + Math.random() * 2.0,
-                  1.2
+                  2.8 + Math.random() * 1.8,
+                  1.1
                 );
               }
             }
           }
 
-          // 3. 动力学导流与自然滚脱力
-          if (this.glassMode === 'schemeA') {
-            if (hit.isInner) {
-              // 倾斜碗底：加速沿倾角向低口前沿（+Z）汇聚滑泻
-              const m = this.glassRotMat.elements;
-              const fwdX = m[6], fwdY = m[7], fwdZ = m[8];
-              const slideAccel = 45;
-              e.vx += fwdX * slideAccel * dt;
-              e.vy += fwdY * slideAccel * dt;
-              e.vz += fwdZ * slideAccel * dt;
-            } else {
-              // 杯唇 (isLip) 或外壁 (isOuter)：施加曲面滚脱加速度，向外、向下顺势跌出杯子
-              const rollOffAccel = 60;
-              e.vx += hit.normWorldX * rollOffAccel * dt;
-              e.vy -= (rollOffAccel * 0.7) * dt;
-              e.vz += hit.normWorldZ * rollOffAccel * dt;
-            }
-          } else if (this.glassMode === 'schemeB') {
-            if (!hit.isInner) {
-              // Scheme B 外壁或杯沿外侧：向外滚脱
-              const rollOffAccel = 50;
-              e.vx += hit.normWorldX * rollOffAccel * dt;
-              e.vy -= (rollOffAccel * 0.7) * dt;
-              e.vz += hit.normWorldZ * rollOffAccel * dt;
-            }
+          // 3. 动力学导流：顺沿倾斜坡度自然滑泻倾倒（水满自溢瀑布效果）
+          if (hit.isInner) {
+            // 倾斜内碗底：沿倾角朝低口前沿（+Z）汇聚滑泻
+            const m = this.glassRotMat.elements;
+            const fwdX = m[6], fwdY = m[7], fwdZ = m[8];
+            const slideAccel = 55;
+            e.vx += fwdX * slideAccel * dt;
+            e.vy += fwdY * slideAccel * dt;
+            e.vz += fwdZ * slideAccel * dt;
+          } else {
+            // 杯唇与外壁：顺着外凸曲面自然滚落跌下
+            const rollOffAccel = 65;
+            e.vx += hit.normWorldX * rollOffAccel * dt;
+            e.vy -= (rollOffAccel * 0.75) * dt;
+            e.vz += hit.normWorldZ * rollOffAccel * dt;
           }
 
-          // 4. 防滞留看门狗：若非正常堆积区且速度极低，施加脱困微冲量
+          // 4. 防滞留看门狗：防止在任何微观极值点形成极低速停滞
           const curSpeed = Math.hypot(e.vx, e.vy, e.vz);
-          if (curSpeed < 14 && (!hit.isInner || this.glassMode === 'schemeA')) {
+          if (curSpeed < 14) {
             e.stuckTimer = (e.stuckTimer || 0) + dt;
-            if (e.stuckTimer > 0.8) {
-              e.vx += (Math.random() - 0.5) * 20 + hit.normWorldX * 35;
+            if (e.stuckTimer > 0.7) {
+              e.vx += (Math.random() - 0.5) * 18 + hit.normWorldX * 30;
               e.vy -= 45;
-              e.vz += (Math.random() - 0.5) * 20 + hit.normWorldZ * 35;
+              e.vz += (Math.random() - 0.5) * 18 + hit.normWorldZ * 30;
               e.stuckTimer = 0;
             }
           } else {
@@ -1436,81 +1420,6 @@ export class GoldFallSystem {
       }
     }
 
-    // 方案 B：端正盛装盛满的实体堆叠排斥与漫溢管理
-    if (this.glassMode === 'schemeB') {
-      const inCupEntities = [];
-      for (let i = 0; i < this.entities.length; i++) {
-        const ent = this.entities[i];
-        const lpY = ent.mesh.position.y - this.glassPos.y;
-        const lpR = Math.hypot(ent.mesh.position.x - this.glassPos.x, ent.mesh.position.z - this.glassPos.z);
-        if (lpY >= -16 && lpY <= 52 && lpR <= 42) {
-          ent.inCup = true;
-          ent.cupTime = (ent.cupTime || 0) + dt;
-          inCupEntities.push(ent);
-        } else {
-          ent.inCup = false;
-        }
-      }
-
-      // 杯内实体间接触排斥，形成真实的珠宝堆叠山体
-      for (let a = 0; a < inCupEntities.length; a++) {
-        const ea = inCupEntities[a];
-        const rA = ea.type === 'coin' ? 12.0 : (ea.type === 'pearl' ? 5.0 * ea.baseScale : 7.5 * ea.baseScale);
-        for (let b = a + 1; b < inCupEntities.length; b++) {
-          const eb = inCupEntities[b];
-          const rB = eb.type === 'coin' ? 12.0 : (eb.type === 'pearl' ? 5.0 * eb.baseScale : 7.5 * eb.baseScale);
-          const minD = rA + rB;
-          const dx = ea.mesh.position.x - eb.mesh.position.x;
-          const dy = ea.mesh.position.y - eb.mesh.position.y;
-          const dz = ea.mesh.position.z - eb.mesh.position.z;
-          const distSq = dx * dx + dy * dy + dz * dz;
-          if (distSq < minD * minD && distSq > 0.001) {
-            const d = Math.sqrt(distSq);
-            const overlap = (minD - d) * 0.5;
-            const nx = dx / d, ny = dy / d, nz = dz / d;
-
-            ea.mesh.position.x += nx * overlap;
-            ea.mesh.position.y += ny * overlap;
-            ea.mesh.position.z += nz * overlap;
-
-            eb.mesh.position.x -= nx * overlap;
-            eb.mesh.position.y -= ny * overlap;
-            eb.mesh.position.z -= nz * overlap;
-
-            ea.vx += nx * overlap * 10;
-            ea.vy += ny * overlap * 10;
-            ea.vz += nz * overlap * 10;
-
-            eb.vx -= nx * overlap * 10;
-            eb.vy -= ny * overlap * 10;
-            eb.vz -= nz * overlap * 10;
-          }
-        }
-
-        // 杯满漫溢：若杯中实体超出 9 颗，推动上层实体朝唇边推挤漫出
-        if (inCupEntities.length > 9) {
-          const lpY = ea.mesh.position.y - this.glassPos.y;
-          if (lpY > 30) {
-            const dx = ea.mesh.position.x - this.glassPos.x;
-            const dz = ea.mesh.position.z - this.glassPos.z;
-            const rHoriz = Math.hypot(dx, dz);
-            if (rHoriz > 1e-3) {
-              const push = 22 * dt;
-              ea.vx += (dx / rHoriz) * push;
-              ea.vz += (dz / rHoriz) * push;
-              ea.vy += 10 * dt;
-            }
-          }
-        }
-
-        // 杯底深层沉淀消融：在杯底停留超过 5.5 秒的珠宝化为细沙向下消散，维系生生不息
-        const lpY = ea.mesh.position.y - this.glassPos.y;
-        if (ea.cupTime > 5.5 && lpY < 8) {
-          ea.dissolving = true;
-        }
-      }
-    }
-
     // 4. 更新微粒系统
     let activeIdx = 0;
     const pPos = this.pPositions;
@@ -1535,7 +1444,7 @@ export class GoldFallSystem {
       p.vz *= 0.985;
 
       // 粒子与 3D 金樽物理导流与避障（杜绝直穿杯心穿模，并在杯口汇聚倾泻）
-      if (this.glassMode !== 'none') {
+      if (this.glassEnabled) {
         const lpX = p.x - this.glassPos.x;
         const lpY = p.y - this.glassPos.y;
         const lpZ = p.z - this.glassPos.z;
@@ -1559,12 +1468,10 @@ export class GoldFallSystem {
               const bowlInnerR = 10 + 31 * Math.pow(Math.max(0, (ly + 16) / 67), 0.65);
               if (r >= bowlInnerR - 2.5) {
                 p.vy *= 0.55;
-                if (this.glassMode === 'schemeA') {
-                  const m = this.glassRotMat.elements;
-                  p.vx += m[6] * 32 * dt;
-                  p.vy += m[7] * 32 * dt;
-                  p.vz += m[8] * 32 * dt;
-                }
+                const m = this.glassRotMat.elements;
+                p.vx += m[6] * 32 * dt;
+                p.vy += m[7] * 32 * dt;
+                p.vz += m[8] * 32 * dt;
               }
             } else {
               // B. 杯身外壁、实心杯挺与底盘 (物理径向推离避障，杜绝穿心穿透)
@@ -1641,26 +1548,10 @@ export class GoldFallSystem {
     this.ratios.gem = Math.max(0, gem);
   }
 
-  setGlassMode(mode) {
-    this.glassMode = mode;
-    if (mode === 'none') {
-      this.glassGroup.visible = false;
-      this.dissolveY = -80;
-    } else if (mode === 'schemeA') {
-      this.glassGroup.visible = true;
-      this.glassPitch = 0.52;
-      this.glassRoll = -0.06;
-      this.glassPosY = -95;
-      this.dissolveY = -150;
-      this._updateGlassTransform();
-    } else if (mode === 'schemeB') {
-      this.glassGroup.visible = true;
-      this.glassPitch = 0.0;
-      this.glassRoll = 0.0;
-      this.glassPosY = -110;
-      this.dissolveY = -160;
-      this._updateGlassTransform();
-    }
+  setGlassEnabled(enabled) {
+    this.glassEnabled = !!enabled;
+    this.glassGroup.visible = this.glassEnabled;
+    this.dissolveY = this.glassEnabled ? -150 : -80;
   }
 
   setGlassPosY(y) {
@@ -1668,8 +1559,29 @@ export class GoldFallSystem {
     this._updateGlassTransform();
   }
 
+  setGlassPitch(pitchDeg) {
+    this.glassPitch = pitchDeg * (Math.PI / 180);
+    this._updateGlassTransform();
+  }
+
+  setGlassCushion(cushion) {
+    this.glassCushion = Math.max(0.0, Math.min(0.5, cushion));
+  }
+
+  // 兼容旧接口
+  setGlassMode(mode) {
+    if (mode === 'none') {
+      this.setGlassEnabled(false);
+    } else {
+      this.setGlassEnabled(true);
+      if (mode === 'schemeA') {
+        this.setGlassPitch(24);
+      }
+    }
+  }
+
   setGlassRestitution(restitution) {
-    this.glassRestitution = Math.max(0.1, Math.min(1.0, restitution));
+    this.setGlassCushion(restitution);
   }
 
   reset() {
