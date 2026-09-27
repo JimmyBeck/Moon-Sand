@@ -133,6 +133,7 @@ function init() {
 
   // 3. 蒙尘之罪·金币珍珠宝石流沙系统
   goldFallSystem = new GoldFallSystem(scene);
+  window.goldFallSystem = goldFallSystem;
 
   // 4. 障碍物容器
   obstacleGroup = new THREE.Group();
@@ -357,6 +358,16 @@ function setupUI() {
       const v = parseFloat(e.target.value);
       if (goldFallSystem) goldFallSystem.setTimeScale(v);
       if (goldTimeScaleVal) goldTimeScaleVal.innerText = `${v.toFixed(2)}x`;
+    });
+  }
+
+  const goldFallSpeedSlider = document.getElementById('gold-fallspeed-slider');
+  const goldFallSpeedVal = document.getElementById('gold-fallspeed-val');
+  if (goldFallSpeedSlider) {
+    goldFallSpeedSlider.addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
+      if (goldFallSystem) goldFallSystem.setFallSpeedFactor(v);
+      if (goldFallSpeedVal) goldFallSpeedVal.innerText = `${v.toFixed(1)}x`;
     });
   }
 
@@ -747,4 +758,8 @@ function setupDragAndDrop() {
   });
 }
 
-window.addEventListener('DOMContentLoaded', init);
+if (document.readyState === 'loading') {
+  window.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}

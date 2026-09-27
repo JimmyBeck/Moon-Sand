@@ -190,7 +190,23 @@
     .control-item {
       display: flex;
       flex-direction: column;
-      gap: 5px;
+      gap: 7px;
+    }
+
+    #goldfall-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .panel-card {
+      padding: 12px;
+      background: rgba(255, 203, 30, 0.05);
+      border-radius: 8px;
+      border: 1px solid rgba(255, 203, 30, 0.16);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
     }
 
     .control-label {
@@ -231,7 +247,8 @@
 
     input[type="range"] {
       padding: 0;
-      height: 4px;
+      margin: 4px 0;
+      height: 6px;
       accent-color: var(--accent-gold);
     }
 
@@ -382,76 +399,91 @@
       <div id="goldfall-section">
         <div class="panel-section-title">蒙尘之罪流沙控制</div>
 
-        <!-- 时间控制与时停 -->
-        <div class="control-item">
-          <div class="control-label"><span>时间状态</span></div>
-          <button id="btn-time-pause" class="action-btn" style="width:100%; font-size:12px; font-weight:600; padding:8px 0; background:rgba(255,203,30,0.18); border-color:var(--accent-gold); color:var(--accent-gold); cursor:pointer;">
-            ⏸ 暂停 / 时间停止 (Space)
-          </button>
-        </div>
-
-        <div class="control-item">
-          <div class="control-label">
-            <span>时间流速 (速度倍率)</span>
-            <span id="gold-timescale-val">1.0x</span>
+        <!-- 卡片 1: 运动与时间力学 -->
+        <div class="panel-card">
+          <div class="control-label" style="font-weight:600; color:var(--accent-gold);">
+            <span>⏱️ 运动与时间力学</span>
           </div>
-          <input id="gold-timescale-slider" type="range" min="0.1" max="2.0" step="0.05" value="1.0">
-        </div>
 
-        <div class="drop-hint" style="color:var(--accent-gold); font-size:10px; margin-top:-2px; margin-bottom:6px; line-height:1.4;">
-          💡 提示：暂停后可用鼠标拖拽场景 360° 近距离审视金币浮雕与宝石切面
-        </div>
-
-        <!-- 流沙形态与频度 -->
-        <div class="control-item">
-          <div class="control-label">
-            <span>流沙整体宽度</span>
-            <span id="gold-width-val">90 px</span>
+          <div class="control-item">
+            <button id="btn-time-pause" class="action-btn" style="width:100%; font-size:12px; font-weight:600; padding:8px 0; background:rgba(255,203,30,0.18); border-color:var(--accent-gold); color:var(--accent-gold); cursor:pointer;">
+              ⏸ 暂停 / 时间停止 (Space)
+            </button>
           </div>
-          <input id="gold-width-slider" type="range" min="40" max="240" step="5" value="90">
-        </div>
 
-        <div class="control-item">
-          <div class="control-label">
-            <span>下落生成频度</span>
-            <span id="gold-rate-val">2.5 /s</span>
+          <div class="control-item">
+            <div class="control-label">
+              <span>时间流速 (速度倍率)</span>
+              <span id="gold-timescale-val">1.0x</span>
+            </div>
+            <input id="gold-timescale-slider" type="range" min="0.1" max="2.0" step="0.05" value="1.0">
           </div>
-          <input id="gold-rate-slider" type="range" min="0.8" max="5.0" step="0.2" value="2.5">
-        </div>
 
-        <div class="control-item">
-          <div class="control-label">
-            <span>流沙消融高度</span>
-            <span id="gold-dissolve-val">-80</span>
+          <div class="control-item">
+            <div class="control-label">
+              <span>下落速度 (物理惯性/重力)</span>
+              <span id="gold-fallspeed-val">1.0x</span>
+            </div>
+            <input id="gold-fallspeed-slider" type="range" min="0.3" max="2.5" step="0.1" value="1.0">
           </div>
-          <input id="gold-dissolve-slider" type="range" min="-180" max="60" step="10" value="-80">
         </div>
 
-        <!-- 珠宝品类配比 -->
-        <div style="margin-top:12px; padding:10px 12px; background:rgba(255,203,30,0.06); border-radius:6px; border:1px solid rgba(255,203,30,0.18);">
-          <div class="control-label" style="margin-bottom:8px;">
-            <span style="font-weight:600; color:var(--accent-gold);">珠宝品类配比</span>
+        <!-- 卡片 2: 流沙形态与消融 -->
+        <div class="panel-card">
+          <div class="control-label" style="font-weight:600; color:var(--accent-gold);">
+            <span>✨ 流沙形态与频度</span>
+          </div>
+
+          <div class="control-item">
+            <div class="control-label">
+              <span>流沙整体宽度</span>
+              <span id="gold-width-val">90 px</span>
+            </div>
+            <input id="gold-width-slider" type="range" min="40" max="240" step="5" value="90">
+          </div>
+
+          <div class="control-item">
+            <div class="control-label">
+              <span>下落生成频度</span>
+              <span id="gold-rate-val">2.5 /s</span>
+            </div>
+            <input id="gold-rate-slider" type="range" min="0.8" max="5.0" step="0.2" value="2.5">
+          </div>
+
+          <div class="control-item">
+            <div class="control-label">
+              <span>流沙消融高度</span>
+              <span id="gold-dissolve-val">-80</span>
+            </div>
+            <input id="gold-dissolve-slider" type="range" min="-180" max="60" step="10" value="-80">
+          </div>
+        </div>
+
+        <!-- 卡片 3: 珠宝品类配比 -->
+        <div class="panel-card">
+          <div class="control-label">
+            <span style="font-weight:600; color:var(--accent-gold);">💎 珠宝品类配比</span>
             <span id="gold-ratio-summary" style="font-size:11px; color:var(--accent-gold); font-weight:600;">50% : 30% : 20%</span>
           </div>
 
-          <div class="control-item" style="margin-bottom:6px;">
-            <div class="control-label" style="font-size:11px;">
+          <div class="control-item">
+            <div class="control-label">
               <span>🪙 金币比重</span>
               <span id="ratio-coin-val">50%</span>
             </div>
             <input id="gold-ratio-coin" type="range" min="0" max="100" step="5" value="50">
           </div>
 
-          <div class="control-item" style="margin-bottom:6px;">
-            <div class="control-label" style="font-size:11px;">
+          <div class="control-item">
+            <div class="control-label">
               <span>⚪ 珍珠比重</span>
               <span id="ratio-pearl-val">30%</span>
             </div>
             <input id="gold-ratio-pearl" type="range" min="0" max="100" step="5" value="30">
           </div>
 
-          <div class="control-item" style="margin-bottom:0;">
-            <div class="control-label" style="font-size:11px;">
+          <div class="control-item">
+            <div class="control-label">
               <span>💎 宝石比重 (红/绿)</span>
               <span id="ratio-gem-val">20%</span>
             </div>
@@ -459,39 +491,39 @@
           </div>
         </div>
 
-        <!-- 3D 碰撞导流阻挡物 (Solid Deflector Obstacle) -->
-        <div style="margin-top:12px; padding:10px 12px; background:rgba(255,203,30,0.06); border-radius:6px; border:1px solid rgba(255,203,30,0.18);">
-          <div class="control-label" style="margin-bottom:8px;">
+        <!-- 卡片 4: 3D 碰撞导流阻挡物 -->
+        <div class="panel-card">
+          <div class="control-label">
             <span style="font-weight:600; color:var(--accent-gold);">👑 3D 导流阻挡物</span>
             <button id="gold-glass-toggle-btn" class="action-btn active" style="font-size:11px; padding:2px 8px;">已启用</button>
           </div>
 
-          <div class="control-item" style="margin-bottom:8px;">
-            <div class="control-label" style="font-size:11px;"><span>形态选项</span></div>
+          <div class="control-item">
+            <div class="control-label"><span>形态选项</span></div>
             <div class="btn-group" id="gold-obs-type-group">
-              <button id="gold-obs-glass" class="action-btn active" style="flex:1; padding:4px 0; font-size:11px;">高脚金樽</button>
-              <button id="gold-obs-hand" class="action-btn" style="flex:1; padding:4px 0; font-size:11px;">捧金之手 🫴</button>
+              <button id="gold-obs-glass" class="action-btn active" style="flex:1; padding:5px 0; font-size:11px;">高脚金樽</button>
+              <button id="gold-obs-hand" class="action-btn" style="flex:1; padding:5px 0; font-size:11px;">捧金之手 🫴</button>
             </div>
           </div>
 
-          <div class="control-item" style="margin-bottom:6px;">
-            <div class="control-label" style="font-size:11px;">
+          <div class="control-item">
+            <div class="control-label">
               <span>物体高度 (Y 轴)</span>
               <span id="gold-glass-y-val">-95</span>
             </div>
             <input id="gold-glass-y-slider" type="range" min="-150" max="-50" step="5" value="-95">
           </div>
 
-          <div class="control-item" style="margin-bottom:6px;">
-            <div class="control-label" style="font-size:11px;">
+          <div class="control-item">
+            <div class="control-label">
               <span>导流倾角</span>
               <span id="gold-glass-pitch-val">24°</span>
             </div>
             <input id="gold-glass-pitch-slider" type="range" min="15" max="35" step="1" value="24">
           </div>
 
-          <div class="control-item" style="margin-bottom:0;">
-            <div class="control-label" style="font-size:11px;">
+          <div class="control-item">
+            <div class="control-label">
               <span>减震吸能缓冲 (流沙/水感)</span>
               <span id="gold-glass-cushion-val">0.04</span>
             </div>

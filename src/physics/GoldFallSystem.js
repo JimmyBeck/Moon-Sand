@@ -29,7 +29,9 @@ export class GoldFallSystem {
     this.spawnTimer = 0;
     this.dissolveY = -80;    // 触发消融过渡的纵向高度
     this.bottomY = -420;     // 粒子最底层回收高度
-    this.gravity = 340;      // 基础重力加速度 (最佳自然落体物理常数)
+    this.baseGravity = 340;  // 基础重力加速度常数
+    this.fallSpeedFactor = 1.0; // 独立物理下落速度系数 (0.3x ~ 2.5x)
+    this.gravity = this.baseGravity * this.fallSpeedFactor;
 
     // 流沙形态与品类配比控制
     this.streamWidth = 90;   // 流沙整体宽度 (40 ~ 240)
@@ -856,143 +858,168 @@ export class GoldFallSystem {
   _initPalmHand() {
     this.handGroup = new THREE.Group();
     this.handGroup.name = 'PalmHandObstacle';
-    this.handGroup.visible = false;
+    this.handGroup.visible = (this.obstacleType === 'hand');
     this.group.add(this.handGroup);
 
     const bodyMat = this.glassBodyMat;
     const goldMat = this.glassGoldMat;
 
-    // 1. 前臂与手腕 (Forearm & Wrist)
-    const armGeom = new THREE.CylinderGeometry(13.5, 17.5, 52, 32);
-    armGeom.translate(0, -22, -45);
-    armGeom.rotateX(Math.PI * 0.22);
+    // 1. 前臂与手腕 (Forearm & Wrist: 自 -Z 方平滑伸入，倾斜上接手腕)
+    const armGeom = new THREE.CylinderGeometry(13.5, 17.5, 46, 32);
+    armGeom.rotateX(Math.PI * 0.5); // 圆柱高度对齐至 Z 轴
+    armGeom.rotateX(0.12);          // 向上倾斜接手腕
+    armGeom.translate(0, -9.0, -42);
     const armMesh = new THREE.Mesh(armGeom, bodyMat);
     armMesh.castShadow = true;
     this.handGroup.add(armMesh);
 
     // 腕部 24K 黄金嵌饰金镯 (Gold Wrist Cuff)
-    const cuffGeom = new THREE.TorusGeometry(15.5, 2.0, 16, 40);
+    const cuffGeom = new THREE.TorusGeometry(15.2, 2.0, 16, 40);
     const cuffMesh = new THREE.Mesh(cuffGeom, goldMat);
-    cuffMesh.position.set(0, -5, -30);
-    cuffMesh.rotation.x = Math.PI * 0.22;
+    cuffMesh.position.set(0, -6.5, -21);
+    cuffMesh.rotation.x = 0.12;
     this.handGroup.add(cuffMesh);
 
     // 2. 掌心基座与肌肉群 (Palm Bed & Eminences)
+    // 2D 轮廓：Y 对应 3D 中的 Z 轴（-20 为腕根，+15 为指根横弓）
     const palmShape = new THREE.Shape();
-    palmShape.moveTo(-20, -22);
-    palmShape.quadraticCurveTo(-24, 0, -18, 14);   // 小指外侧
-    palmShape.quadraticCurveTo(0, 18, 16, 15);     // 远端掌骨横弓
-    palmShape.quadraticCurveTo(24, 2, 20, -14);    // 虎口至大鱼际
-    palmShape.quadraticCurveTo(10, -25, -20, -22); // 腕关节线
+    palmShape.moveTo(-19, -20);
+    palmShape.quadraticCurveTo(-23, -2, -18, 14);  // 小指外侧缘
+    palmShape.quadraticCurveTo(0, 17, 16, 14);     // 远端掌骨横弓（指根）
+    palmShape.quadraticCurveTo(24, 2, 20, -12);    // 虎口至大鱼际
+    palmShape.quadraticCurveTo(10, -22, -19, -20); // 腕关节线
 
     const palmExtrude = {
-      depth: 10,
+      depth: 8.5,
       bevelEnabled: true,
       bevelSegments: 4,
       steps: 1,
-      bevelSize: 3.2,
-      bevelThickness: 3.2
+      bevelSize: 2.8,
+      bevelThickness: 2.5
     };
     const palmGeom = new THREE.ExtrudeGeometry(palmShape, palmExtrude);
-    palmGeom.rotateX(-Math.PI * 0.5);
-    palmGeom.translate(0, 2, -2);
+    // 正向绕 X 轴旋转 90 度：2D Y 轴转为 3D +Z 轴（-20在后方，+15在前方），拉伸深度转为 3D -Y 轴
+    palmGeom.rotateX(Math.PI * 0.5);
+    palmGeom.translate(0, 0, 0);
     const palmMesh = new THREE.Mesh(palmGeom, bodyMat);
     palmMesh.castShadow = true;
     this.handGroup.add(palmMesh);
 
-    // 大鱼际厚肌 (Thenar Eminence)
-    const thenarGeom = new THREE.SphereGeometry(9.5, 24, 24);
-    thenarGeom.scale(1.15, 0.72, 1.35);
+    // 大鱼际厚肌 (Thenar Eminence) - 饱满承托
+    const thenarGeom = new THREE.SphereGeometry(9.0, 24, 24);
+    thenarGeom.scale(1.2, 0.65, 1.35);
     const thenarMesh = new THREE.Mesh(thenarGeom, bodyMat);
-    thenarMesh.position.set(12, 6, -8);
+    thenarMesh.position.set(12, 1.2, -4);
     this.handGroup.add(thenarMesh);
 
     // 小鱼际厚肌 (Hypothenar Eminence)
-    const hypoGeom = new THREE.SphereGeometry(8.0, 24, 24);
-    hypoGeom.scale(0.95, 0.68, 1.45);
+    const hypoGeom = new THREE.SphereGeometry(7.8, 24, 24);
+    hypoGeom.scale(1.0, 0.60, 1.45);
     const hypoMesh = new THREE.Mesh(hypoGeom, bodyMat);
-    hypoMesh.position.set(-14, 5.5, -10);
+    hypoMesh.position.set(-13, 0.8, -6);
     this.handGroup.add(hypoMesh);
 
-    // 3. 构建五指 (Five Digits 🫴 自然微屈接捧姿态)
-    const makeFinger = (rootX, rootY, rootZ, length, baseRadius, rotZ = 0) => {
+    // 3. 构建五指 (Five Digits 🫴 自然向前平展、指尖微屈托捧姿态)
+    const makeFinger = (rootX, rootY, rootZ, length, baseRadius, spreadAngleY = 0) => {
       const fingerGroup = new THREE.Group();
       fingerGroup.position.set(rootX, rootY, rootZ);
-      fingerGroup.rotation.z = rotZ;
+      fingerGroup.rotation.y = spreadAngleY;
 
-      const segLen = length / 3;
-      // 近节指骨 (Proximal)
-      const pGeom = new THREE.CylinderGeometry(baseRadius * 0.88, baseRadius, segLen, 16);
-      pGeom.translate(0, segLen * 0.5, 0);
-      pGeom.rotateX(Math.PI * 0.10);
+      const l1 = length * 0.38; // 近节
+      const l2 = length * 0.32; // 中节
+      const l3 = length * 0.30; // 远节
+
+      // 近节指骨 (Proximal): 圆柱平卧至 +Z，微翘 5 度 (-0.09 rad)
+      const pGeom = new THREE.CylinderGeometry(baseRadius * 0.88, baseRadius, l1, 16);
+      pGeom.rotateX(Math.PI * 0.5);
+      pGeom.translate(0, 0, l1 * 0.5);
+      pGeom.rotateX(-0.09);
       const pMesh = new THREE.Mesh(pGeom, bodyMat);
       fingerGroup.add(pMesh);
 
       // 指关节金环 1 (Knuckle Ring 1)
-      const r1Geom = new THREE.TorusGeometry(baseRadius * 0.94, 0.55, 12, 24);
+      const r1Geom = new THREE.TorusGeometry(baseRadius * 0.94, 0.52, 12, 24);
       const r1Mesh = new THREE.Mesh(r1Geom, goldMat);
-      r1Mesh.position.set(0, segLen * 0.92, segLen * 0.12);
-      r1Mesh.rotation.x = Math.PI * 0.10;
+      r1Mesh.position.set(0, l1 * 0.09, l1 * 0.98);
+      r1Mesh.rotation.x = -0.09;
       fingerGroup.add(r1Mesh);
 
-      // 中节指骨 (Intermediate)
-      const mGeom = new THREE.CylinderGeometry(baseRadius * 0.75, baseRadius * 0.88, segLen, 16);
-      mGeom.translate(0, segLen * 0.5, 0);
-      mGeom.rotateX(Math.PI * 0.22);
+      // 中节指骨 (Intermediate): 上扬 16 度 (-0.28 rad)
+      const mGeom = new THREE.CylinderGeometry(baseRadius * 0.75, baseRadius * 0.88, l2, 16);
+      mGeom.rotateX(Math.PI * 0.5);
+      mGeom.translate(0, 0, l2 * 0.5);
+      mGeom.rotateX(-0.28);
       const mMesh = new THREE.Mesh(mGeom, bodyMat);
-      mMesh.position.set(0, segLen * 0.95, segLen * 0.12);
+      mMesh.position.set(0, l1 * 0.09, l1 * 0.98);
       fingerGroup.add(mMesh);
 
       // 指关节金环 2 (Knuckle Ring 2)
-      const r2Geom = new THREE.TorusGeometry(baseRadius * 0.82, 0.48, 12, 24);
+      const r2Geom = new THREE.TorusGeometry(baseRadius * 0.80, 0.46, 12, 24);
       const r2Mesh = new THREE.Mesh(r2Geom, goldMat);
-      r2Mesh.position.set(0, segLen * 1.82, segLen * 0.45);
-      r2Mesh.rotation.x = Math.PI * 0.22;
+      const mEndZ = l1 * 0.98 + l2 * Math.cos(0.28);
+      const mEndY = l1 * 0.09 + l2 * Math.sin(0.28);
+      r2Mesh.position.set(0, mEndY, mEndZ);
+      r2Mesh.rotation.x = -0.28;
       fingerGroup.add(r2Mesh);
 
-      // 远节与指腹圆润顶端 (Distal & Tip)
-      const dGeom = new THREE.SphereGeometry(baseRadius * 0.72, 16, 16);
-      dGeom.scale(1.0, 1.25, 1.15);
+      // 远节指骨与圆润指腹 (Distal & Tip): 上扬 26 度 (-0.45 rad)
+      const dGeom = new THREE.CylinderGeometry(baseRadius * 0.60, baseRadius * 0.75, l3, 16);
+      dGeom.rotateX(Math.PI * 0.5);
+      dGeom.translate(0, 0, l3 * 0.5);
+      dGeom.rotateX(-0.45);
       const dMesh = new THREE.Mesh(dGeom, bodyMat);
-      dMesh.position.set(0, segLen * 2.15, segLen * 0.78);
+      dMesh.position.set(0, mEndY, mEndZ);
       fingerGroup.add(dMesh);
+
+      // 指尖柔润圆球 (Finger Tip Pad)
+      const tipGeom = new THREE.SphereGeometry(baseRadius * 0.68, 16, 16);
+      tipGeom.scale(1.0, 0.9, 1.15);
+      const tipMesh = new THREE.Mesh(tipGeom, bodyMat);
+      const tipZ = mEndZ + l3 * Math.cos(0.45);
+      const tipY = mEndY + l3 * Math.sin(0.45);
+      tipMesh.position.set(0, tipY, tipZ);
+      fingerGroup.add(tipMesh);
 
       this.handGroup.add(fingerGroup);
     };
 
     // 食指 (Index Finger)
-    makeFinger(11.5, 7.5, 13, 30, 4.2, -0.05);
-    // 中指 (Middle Finger - 最长承托)
-    makeFinger(3.5, 8.0, 15, 35, 4.5, 0);
+    makeFinger(11.2, 0.5, 14.0, 31, 4.1, -0.06);
+    // 中指 (Middle Finger - 最长主承托脊)
+    makeFinger(3.6, 0.8, 15.5, 35, 4.4, 0.0);
     // 无名指 (Ring Finger)
-    makeFinger(-4.8, 7.5, 14, 32, 4.1, 0.04);
+    makeFinger(-4.6, 0.5, 14.5, 32, 4.1, 0.05);
     // 小指 (Pinky Finger)
-    makeFinger(-12.8, 6.8, 11.5, 24, 3.6, 0.10);
+    makeFinger(-12.5, 0.0, 12.5, 25, 3.5, 0.12);
 
-    // 拇指 (Thumb 🫴 虎口微内收托举)
+    // 拇指 (Thumb 🫴 虎口微内收托举，自然向掌心环抱)
     const thumbGroup = new THREE.Group();
-    thumbGroup.position.set(16.5, 6.5, -5);
-    thumbGroup.rotation.set(-0.18, 0.42, -0.32);
+    thumbGroup.position.set(16.0, 0.6, -4.0);
+    thumbGroup.rotation.set(-0.25, -0.42, 0.15); // 内旋环抱
 
-    const t1Geom = new THREE.CylinderGeometry(4.5, 5.2, 15, 16);
-    t1Geom.translate(0, 7.5, 0);
-    t1Geom.rotateX(0.32);
+    const t1Geom = new THREE.CylinderGeometry(4.2, 5.0, 14, 16);
+    t1Geom.rotateX(Math.PI * 0.5);
+    t1Geom.translate(0, 0, 7.0);
+    t1Geom.rotateX(-0.20);
     const t1Mesh = new THREE.Mesh(t1Geom, bodyMat);
     thumbGroup.add(t1Mesh);
 
-    const tRingGeom = new THREE.TorusGeometry(4.7, 0.65, 12, 24);
+    const tRingGeom = new THREE.TorusGeometry(4.4, 0.58, 12, 24);
     const tRingMesh = new THREE.Mesh(tRingGeom, goldMat);
-    tRingMesh.position.set(0, 14, 5.5);
-    tRingMesh.rotation.x = 0.32;
+    tRingMesh.position.set(0, 14 * Math.sin(0.20), 14 * Math.cos(0.20));
+    tRingMesh.rotation.x = -0.20;
     thumbGroup.add(tRingMesh);
 
-    const t2Geom = new THREE.SphereGeometry(4.2, 16, 16);
-    t2Geom.scale(1.0, 1.3, 1.15);
-    t2Geom.translate(0, 18.5, 8.5);
+    const t2Geom = new THREE.SphereGeometry(4.0, 16, 16);
+    t2Geom.scale(1.0, 1.15, 1.25);
+    t2Geom.translate(0, 14 * Math.sin(0.20) + 4.5, 14 * Math.cos(0.20) + 4.5);
     const t2Mesh = new THREE.Mesh(t2Geom, bodyMat);
     thumbGroup.add(t2Mesh);
 
     this.handGroup.add(thumbGroup);
+
+    // 关键修正：手掌创建完毕后，立即执行全局空间与旋转同步
+    this._updateGlassTransform();
   }
 
   _updateGlassTransform() {
@@ -1042,10 +1069,10 @@ export class GoldFallSystem {
     const ly = iy * qw + iw * -qy + iz * -qx - ix * -qz;
     const lz = iz * qw + iw * -qz + ix * -qy - iy * -qx;
 
-    // 手部包围盒快速裁剪
-    if (ly < -40 - radius || ly > 45 + radius) return null;
-    if (lx < -36 - radius || lx > 36 + radius) return null;
-    if (lz < -65 - radius || lz > 60 + radius) return null;
+    // 手部包围盒快速裁剪 (lx: -30 ~ 30, lz: -55 ~ 52, ly: -35 ~ 35)
+    if (ly < -35 - radius || ly > 35 + radius) return null;
+    if (lx < -30 - radius || lx > 30 + radius) return null;
+    if (lz < -55 - radius || lz > 52 + radius) return null;
 
     // 1. 掌心与指腹曲面函数 (Palm & Finger Surface Equation)
     let expectedY = 0;
@@ -1053,37 +1080,36 @@ export class GoldFallSystem {
     let isLip = false;
 
     // 横向有效半宽
-    const halfW = lz > 14 ? 26 : 24;
+    const halfW = lz > 14 ? 26 : 23;
     const normX = Math.abs(lx) / halfW;
     if (normX > 1.35) return null;
 
-    if (lz >= 14) {
-      // 指群区 (lz: 14 ~ 52)：微翘向上，呈迎承与指尖倾泻弧度
-      const tFinger = Math.min(1.0, (lz - 14) / 36);
-      expectedY = 12 + tFinger * 14 - (lx * lx) * 0.012;
-      isLip = (lz >= 36) || (normX >= 0.85); // 指尖与指侧为倾泻涌起边缘
+    if (lz >= 13) {
+      // 指群区 (lz: 13 ~ 50)：微翘向前托捧，指尖自然上扬
+      const tf = Math.min(1.0, (lz - 13) / 35);
+      expectedY = 1.2 + tf * 10.5 - (lx * lx) * 0.007;
+      isLip = (lz >= 39) || (normX >= 0.86); // 指尖与指侧边缘为浪涌溢流口
 
-      nLocX = (lx / halfW) * 0.65;
-      nLocY = isLip ? 0.60 : 0.78;
-      nLocZ = isLip ? 0.75 : 0.45; // 指向指尖方向加速滑脱
-    } else if (lz >= -30) {
-      // 掌心承托区 (lz: -30 ~ 14)：饱满微拱，顺畅分流
-      const tPalm = (lz + 30) / 44;
-      expectedY = 8 + tPalm * 4 - (lx * lx) * 0.010;
+      nLocX = (lx / halfW) * 0.55;
+      nLocY = 1.0;
+      nLocZ = -0.28; // 指向上倾斜，法线反向翘起，世界坐标产生充沛垂直向上托力
+    } else if (lz >= -22) {
+      // 掌心微凹承托区 (lz: -22 ~ 13)：盆状自然接捧聚流
+      expectedY = 0.8 - (lx * lx) * 0.005 + (lz * lz) * 0.0025;
       isLip = normX >= 0.88;
 
-      nLocX = (lx / halfW) * 0.70;
-      nLocY = 0.82;
-      nLocZ = 0.35; // 顺推向前方手指
+      nLocX = (lx / halfW) * 0.65;
+      nLocY = 1.0;
+      nLocZ = 0.10; // 顺推向前方手指
     } else {
-      // 腕根前臂区 (lz: -65 ~ -30)
-      const tArm = (lz + 65) / 35;
-      expectedY = -12 + tArm * 20 - (lx * lx) * 0.015;
+      // 腕根前臂区 (lz: -55 ~ -22)
+      const ta = (lz + 55) / 33;
+      expectedY = -9.0 + ta * 9.8 - (lx * lx) * 0.010;
       isLip = normX >= 0.85;
 
-      nLocX = (lx / 20) * 0.60;
-      nLocY = 0.70;
-      nLocZ = -0.55; // 顺腕部向后方倾泻
+      nLocX = (lx / 18) * 0.50;
+      nLocY = 1.0;
+      nLocZ = -0.30;
     }
 
     const surfaceY = expectedY + radius;
@@ -1102,9 +1128,9 @@ export class GoldFallSystem {
     const nwz = m[2] * nLocX + m[5] * nLocY + m[8] * nLocZ;
 
     // 计算切向发散矢量（沿指尖与手掌外缘扩散）
-    const rx = m[0] * (lx / (halfW || 1)) + m[6] * (lz > 0 ? 0.8 : -0.5);
-    const ry = m[1] * (lx / (halfW || 1)) + m[7] * (lz > 0 ? 0.8 : -0.5);
-    const rz = m[2] * (lx / (halfW || 1)) + m[8] * (lz > 0 ? 0.8 : -0.5);
+    const rx = m[0] * (lx / (halfW || 1)) + m[6] * (lz > 0 ? 0.85 : -0.4);
+    const ry = m[1] * (lx / (halfW || 1)) + m[7] * (lz > 0 ? 0.85 : -0.4);
+    const rz = m[2] * (lx / (halfW || 1)) + m[8] * (lz > 0 ? 0.85 : -0.4);
 
     const dotRN = rx * nwx + ry * nwy + rz * nwz;
     let sx = rx - dotRN * nwx;
@@ -1383,7 +1409,7 @@ export class GoldFallSystem {
     p.prevZ = p.z;
 
     p.vx = (Math.random() - 0.5) * 2;
-    p.vy = -(110 + Math.random() * 110);
+    p.vy = -(110 + Math.random() * 110) * this.fallSpeedFactor;
     p.vz = (Math.random() - 0.5) * 2;
 
     const col = this._getGoldSandColor();
@@ -1534,7 +1560,7 @@ export class GoldFallSystem {
       drag,
       baseScale,
       vx: (Math.random() - 0.5) * 4,
-      vy: -(45 + Math.random() * 35),
+      vy: -(45 + Math.random() * 35) * this.fallSpeedFactor,
       vz: (Math.random() - 0.5) * 3,
       rotSpeed,
       scale: 1.0,
@@ -1635,7 +1661,7 @@ export class GoldFallSystem {
               for (let s = 0; s < sparkCount; s++) {
                 const sandCol = this._getGoldSandColor();
                 const sSpread = (Math.random() - 0.5) * 8;
-                const sSpeed = 16 + Math.random() * 22;
+                const sSpeed = (16 + Math.random() * 22) * Math.sqrt(this.fallSpeedFactor);
                 this.emitParticle(
                   curPos.x + (Math.random() - 0.5) * 3,
                   curPos.y + (Math.random() - 0.5) * 3,
@@ -1826,12 +1852,12 @@ export class GoldFallSystem {
           const gtY = -(this.gravity * 0.85) - dotGN * hit.normWorldY;
           const gtZ = -dotGN * hit.normWorldZ;
 
-          // 杯沿掀起水幕涌浪（还原第一版标志性涌起与外翻水幕散开）
+          // 边缘与指尖掀起水幕涌浪（还原标志性涌起与外翻水幕散开）
           let surgeY = 0;
           let surgeOut = 0;
-          if (hit.isLip || (hit.ly >= 36 && hit.ly <= 53)) {
-            surgeY = 52;
-            surgeOut = 75;
+          if (hit.isLip || (this.obstacleType === 'glass' && hit.ly >= 36 && hit.ly <= 53)) {
+            surgeY = 52 * Math.sqrt(this.fallSpeedFactor);
+            surgeOut = 75 * Math.sqrt(this.fallSpeedFactor);
           }
 
           p.vx = p.vx * 0.86 + (gtX * 0.85 + hit.scatX * (36 + surgeOut)) * dt;
@@ -1912,6 +1938,11 @@ export class GoldFallSystem {
     this.timeScale = Math.max(0.05, Math.min(3.0, scale));
   }
 
+  setFallSpeedFactor(factor) {
+    this.fallSpeedFactor = Math.max(0.3, Math.min(2.5, factor));
+    this.gravity = this.baseGravity * this.fallSpeedFactor;
+  }
+
   setStreamWidth(w) {
     this.streamWidth = Math.max(30, Math.min(300, w));
   }
@@ -1933,6 +1964,7 @@ export class GoldFallSystem {
     this.obstacleType = type === 'hand' ? 'hand' : 'glass';
     if (this.glassGroup) this.glassGroup.visible = this.glassEnabled && (this.obstacleType === 'glass');
     if (this.handGroup) this.handGroup.visible = this.glassEnabled && (this.obstacleType === 'hand');
+    this._updateGlassTransform();
   }
 
   setGlassPosY(y) {
