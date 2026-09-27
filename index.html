@@ -459,16 +459,24 @@
           </div>
         </div>
 
-        <!-- 3D 碰撞导流金樽 (Solid Deflector Obstacle) -->
+        <!-- 3D 碰撞导流阻挡物 (Solid Deflector Obstacle) -->
         <div style="margin-top:12px; padding:10px 12px; background:rgba(255,203,30,0.06); border-radius:6px; border:1px solid rgba(255,203,30,0.18);">
           <div class="control-label" style="margin-bottom:8px;">
-            <span style="font-weight:600; color:var(--accent-gold);">👑 3D 金樽导流体</span>
+            <span style="font-weight:600; color:var(--accent-gold);">👑 3D 导流阻挡物</span>
             <button id="gold-glass-toggle-btn" class="action-btn active" style="font-size:11px; padding:2px 8px;">已启用</button>
+          </div>
+
+          <div class="control-item" style="margin-bottom:8px;">
+            <div class="control-label" style="font-size:11px;"><span>形态选项</span></div>
+            <div class="btn-group" id="gold-obs-type-group">
+              <button id="gold-obs-glass" class="action-btn active" style="flex:1; padding:4px 0; font-size:11px;">高脚金樽</button>
+              <button id="gold-obs-hand" class="action-btn" style="flex:1; padding:4px 0; font-size:11px;">捧金之手 🫴</button>
+            </div>
           </div>
 
           <div class="control-item" style="margin-bottom:6px;">
             <div class="control-label" style="font-size:11px;">
-              <span>金樽高度 (Y 轴)</span>
+              <span>物体高度 (Y 轴)</span>
               <span id="gold-glass-y-val">-95</span>
             </div>
             <input id="gold-glass-y-slider" type="range" min="-150" max="-50" step="5" value="-95">

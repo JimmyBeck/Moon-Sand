@@ -450,6 +450,22 @@ function setupUI() {
     });
   }
 
+  // 3D 阻挡物形态切换（高脚金樽 vs 捧金之手 🫴）
+  const btnObsGlass = document.getElementById('gold-obs-glass');
+  const btnObsHand = document.getElementById('gold-obs-hand');
+  if (btnObsGlass && btnObsHand) {
+    btnObsGlass.addEventListener('click', () => {
+      btnObsGlass.classList.add('active');
+      btnObsHand.classList.remove('active');
+      if (goldFallSystem) goldFallSystem.setObstacleType('glass');
+    });
+    btnObsHand.addEventListener('click', () => {
+      btnObsHand.classList.add('active');
+      btnObsGlass.classList.remove('active');
+      if (goldFallSystem) goldFallSystem.setObstacleType('hand');
+    });
+  }
+
   if (glassYSlider) {
     glassYSlider.addEventListener('input', (e) => {
       const v = parseFloat(e.target.value);
