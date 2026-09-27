@@ -38,10 +38,11 @@ export class GoldFallSystem {
     this.entities = [];
     this.maxEntities = 80;
 
-    // 伴生与消融流沙粒子系统
-    this.maxParticles = 12000;
-    this.activeParticleCount = 0;
-    this.particlePool = [];
+    // 伴生与消融流沙粒子系统（4200 高密常驻闭环流沙瀑布 + 1800 动态迸发池，LineSegments 流线拖影 + Points 双通道渲染）
+    this.baseStreamCount = 4200;
+    this.totalParticles = 6000;
+    this.activeParticleCount = 4200;
+    this.particles = [];
 
     // 3D 碰撞金樽（实心导流障碍物 Solid Deflector Spillway）
     this.glassGroup = new THREE.Group();
@@ -61,7 +62,6 @@ export class GoldFallSystem {
     this.glassInvQuat = this.glassQuat.clone().invert();
     this.glassRotMat = new THREE.Matrix3().setFromMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(this.glassQuat));
 
-    this._innerSegments = [];
     this._outerSegments = [];
 
     // 零 GC 预分配碰撞结果缓存（支撑数千粒子与珠宝高频物理查询）
@@ -727,13 +727,9 @@ export class GoldFallSystem {
       new THREE.Vector2(43, 40),       // 外碗微收
       new THREE.Vector2(42.5, 50.5),   // 外杯唇
       new THREE.Vector2(41.25, 51.5),  // 杯唇圆弧顶点
-      new THREE.Vector2(40.0, 50.5),   // 内杯唇
-      new THREE.Vector2(40.5, 40),     // 内壁上部
-      new THREE.Vector2(42.5, 25),     // 内壁腰部
-      new THREE.Vector2(37.5, 10),     // 内壁腹部
-      new THREE.Vector2(23.5, -5),     // 内壁下收
-      new THREE.Vector2(9.5, -14),     // 内壁底部过渡
-      new THREE.Vector2(0, -15)        // 内碗底中心
+      new THREE.Vector2(32.0, 52.0),   // 实心导流微拱过渡
+      new THREE.Vector2(16.0, 52.5),   // 实心导流穹顶
+      new THREE.Vector2(0, 52.8)       // 实心导流中心顶点
     ];
 
     this.glassGeom = new THREE.LatheGeometry(profilePoints, 48);
@@ -793,30 +789,7 @@ export class GoldFallSystem {
     baseRingMesh.rotation.x = Math.PI / 2;
     this.glassGroup.add(baseRingMesh);
 
-    // 4. 预计算解析碰撞截面线段
-    const rawInner = [
-      [0, -15],
-      [9.5, -14],
-      [23.5, -5],
-      [37.5, 10],
-      [42.5, 25],
-      [40.5, 40],
-      [40.0, 50.5]
-    ];
-    this._innerSegments = [];
-    for (let i = 0; i < rawInner.length - 1; i++) {
-      const ax = rawInner[i][0], ay = rawInner[i][1];
-      const bx = rawInner[i + 1][0], by = rawInner[i + 1][1];
-      const dx = bx - ax, dy = by - ay;
-      const lenSq = dx * dx + dy * dy;
-      const nlen = Math.hypot(-dy, dx);
-      this._innerSegments.push({
-        ax, ay, bx, by, dx, dy,
-        invLenSq: 1.0 / lenSq,
-        nx: -dy / nlen,
-        ny: dx / nlen
-      });
-    }
+    // 4. 预计算解析碰撞截面外壁线段 (Solid Deflector Outer Segments)
 
     const rawOuter = [
       [42.5, 50.5],
@@ -887,71 +860,47 @@ export class GoldFallSystem {
 
     const r = Math.hypot(lx, lz);
 
-    if (ly < -100 - radius || ly > 55 + radius) return null;
+    if (ly < -100 - radius || ly > 58 + radius) return null;
     if (r > 48 + radius) return null;
 
     const urx = r > 1e-4 ? lx / r : 1;
     const urz = r > 1e-4 ? lz / r : 0;
 
     let bestHit = null;
-    let maxPen = 0;
 
-    // A. 检测内碗凹腔
-    if (ly >= -16 - radius && r <= 44 + radius) {
-      for (let i = 0; i < this._innerSegments.length; i++) {
-        const seg = this._innerSegments[i];
-        let t = ((r - seg.ax) * seg.dx + (ly - seg.ay) * seg.dy) * seg.invLenSq;
-        t = Math.max(0, Math.min(1, t));
+    // 1. 实心穹顶与杯唇导流表面 (Solid Deflector Crown & Lip Crest)
+    // 覆盖整个杯顶区域 (r <= 43.5 + radius)，消除内凹陷阱，全部赋予外向导流梯度
+    if (r <= 43.5 + radius && ly >= 35.0) {
+      const normR = Math.min(1.0, r / 41.25);
+      const expectedY = 51.5 + 1.3 * (1.0 - normR * normR);
+      const topSurfaceY = expectedY + radius;
 
-        const cx = seg.ax + t * seg.dx;
-        const cy = seg.ay + t * seg.dy;
+      if (ly <= topSurfaceY && ly >= 40.0 - radius) {
+        const pen = topSurfaceY - ly;
+        const isLip = r >= 34.0;
 
-        const sDist = (r - cx) * seg.nx + (ly - cy) * seg.ny;
-        if (sDist < radius && sDist > -radius * 1.6) {
-          const pen = radius - sDist;
-          if (pen > maxPen) {
-            maxPen = pen;
-            bestHit = {
-              pen: pen,
-              nLocX: seg.nx * urx,
-              nLocY: seg.ny,
-              nLocZ: seg.nx * urz,
-              isInner: true,
-              ly: ly,
-              r: r
-            };
-          }
-        }
-      }
-    }
+        let nR = isLip ? 0.82 : (0.42 + 0.40 * normR);
+        let nY = isLip ? 0.57 : 0.78;
+        const nLen = Math.hypot(nR, nY);
+        nR /= nLen;
+        nY /= nLen;
 
-    // B. 检测杯唇圆环 (r=41.25, ly=50.5)
-    const lipDist = Math.hypot(r - 41.25, ly - 50.5);
-    const lipColRadius = radius + 1.25;
-    if (lipDist < lipColRadius) {
-      const pen = lipColRadius - lipDist;
-      if (pen > maxPen) {
-        maxPen = pen;
-        let nR = lipDist > 1e-4 ? (r - 41.25) / lipDist : 0;
-        let nY = lipDist > 1e-4 ? (ly - 50.5) / lipDist : 1;
-        // 关键物理修正：当物体落在唇部正上方或外侧时，赋予明确的外向滚脱切向梯度，防止在鞍点死锁
-        if (nR < 0.35) {
-          nR = 0.55;
-        }
         bestHit = {
           pen: pen,
           nLocX: nR * urx,
           nLocY: nY,
           nLocZ: nR * urz,
-          isLip: true,
+          isLip: isLip,
+          isOuter: false,
           ly: ly,
           r: r
         };
       }
     }
 
-    // C. 检测外碗、杯挺与底盘
-    if (ly >= -98 - radius && r >= 3.5 - radius) {
+    // 2. 外碗侧壁、杯挺与底座 (Outer Flank, Stem & Base)
+    if (!bestHit && ly >= -98 - radius && r >= 3.5 - radius) {
+      let maxPen = 0;
       for (let i = 0; i < this._outerSegments.length; i++) {
         const seg = this._outerSegments[i];
         let t = ((r - seg.ax) * seg.dx + (ly - seg.ay) * seg.dy) * seg.invLenSq;
@@ -970,6 +919,7 @@ export class GoldFallSystem {
               nLocX: seg.nx * urx,
               nLocY: seg.ny,
               nLocZ: seg.nx * urz,
+              isLip: false,
               isOuter: true,
               ly: ly,
               r: r
@@ -1015,7 +965,6 @@ export class GoldFallSystem {
       res.scatX = sx;
       res.scatY = sy;
       res.scatZ = sz;
-      res.isInner = bestHit.isInner;
       res.isLip = bestHit.isLip;
       res.isOuter = bestHit.isOuter;
       res.ly = bestHit.ly;
@@ -1041,17 +990,32 @@ export class GoldFallSystem {
   }
 
   /* ----------------------------------------------------
-   * 6. 伴生与消融流沙粒子系统
+   * 6. 高密流线（LineSegments）与闪光金珠（Points）双通道流沙系统
    * ---------------------------------------------------- */
   _initParticleSystem() {
-    this.pGeom = new THREE.BufferGeometry();
-    this.pPositions = new Float32Array(this.maxParticles * 3);
-    this.pColors = new Float32Array(this.maxParticles * 3);
-    this.pSizes = new Float32Array(this.maxParticles);
+    // 1. 光珠拖影流线系统（LineSegments：还原第一版标志性流线水幕）
+    this.lineGeom = new THREE.BufferGeometry();
+    this.linePositions = new Float32Array(this.totalParticles * 6);
+    this.lineColors = new Float32Array(this.totalParticles * 6);
+    this.lineGeom.setAttribute('position', new THREE.BufferAttribute(this.linePositions, 3));
+    this.lineGeom.setAttribute('color', new THREE.BufferAttribute(this.lineColors, 3));
 
-    this.pGeom.setAttribute('position', new THREE.BufferAttribute(this.pPositions, 3));
-    this.pGeom.setAttribute('color', new THREE.BufferAttribute(this.pColors, 3));
-    this.pGeom.setAttribute('size', new THREE.BufferAttribute(this.pSizes, 1));
+    this.lineMat = new THREE.LineBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    this.lineMesh = new THREE.LineSegments(this.lineGeom, this.lineMat);
+    this.group.add(this.lineMesh);
+
+    // 2. 头部闪烁高光点系统（Points）
+    this.ptGeom = new THREE.BufferGeometry();
+    this.ptPositions = new Float32Array(this.totalParticles * 3);
+    this.ptColors = new Float32Array(this.totalParticles * 3);
+    this.ptGeom.setAttribute('position', new THREE.BufferAttribute(this.ptPositions, 3));
+    this.ptGeom.setAttribute('color', new THREE.BufferAttribute(this.ptColors, 3));
 
     const canvas = document.createElement('canvas');
     canvas.width = 64;
@@ -1064,7 +1028,6 @@ export class GoldFallSystem {
     grad.addColorStop(1, 'rgba(255,180,0,0)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 64, 64);
-
     ctx.strokeStyle = 'rgba(255,255,255,0.8)';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -1073,9 +1036,8 @@ export class GoldFallSystem {
     ctx.stroke();
 
     const particleTexture = new THREE.CanvasTexture(canvas);
-
-    this.pMat = new THREE.PointsMaterial({
-      size: 4.8,
+    this.ptMat = new THREE.PointsMaterial({
+      size: 4.2,
       vertexColors: true,
       map: particleTexture,
       transparent: true,
@@ -1083,36 +1045,71 @@ export class GoldFallSystem {
       blending: THREE.AdditiveBlending,
       depthWrite: false
     });
+    this.pointMesh = new THREE.Points(this.ptGeom, this.ptMat);
+    this.group.add(this.pointMesh);
 
-    this.particleMesh = new THREE.Points(this.pGeom, this.pMat);
-    this.group.add(this.particleMesh);
-
-    for (let i = 0; i < this.maxParticles; i++) {
-      this.particlePool.push({
-        active: false,
+    // 3. 构建 4200 常驻闭环粒子 + 1800 动态迸发粒子
+    this.particles = [];
+    for (let i = 0; i < this.totalParticles; i++) {
+      const isBase = i < this.baseStreamCount;
+      const p = {
+        active: isBase,
+        isBase: isBase,
         x: 0, y: 0, z: 0,
+        prevX: 0, prevY: 0, prevZ: 0,
         vx: 0, vy: 0, vz: 0,
-        r: 1, g: 0.8, b: 0.2,
-        size: 3.5,
-        baseSize: 3.5,
+        r: 1.0, g: 0.85, b: 0.25,
         life: 0,
-        maxLife: 2.5,
+        maxLife: 3.5,
         twinklePhase: Math.random() * Math.PI * 2,
-        twinkleSpeed: 6 + Math.random() * 8
-      });
+        twinkleSpeed: 5 + Math.random() * 8
+      };
+      if (isBase) {
+        this._respawnBaseParticle(p, true);
+      }
+      this.particles.push(p);
     }
   }
 
+  _respawnBaseParticle(p, spreadVertical = false) {
+    const halfW = this.streamWidth * 0.52;
+    const r = Math.sqrt(Math.random()) * halfW;
+    const theta = Math.random() * Math.PI * 2;
+    p.x = Math.cos(theta) * r;
+    p.y = 225 + (Math.random() - 0.5) * 15;
+    p.z = Math.sin(theta) * (r * 0.45);
+
+    if (spreadVertical) {
+      p.y -= Math.random() * 660; // 启动瞬间全垂直高度均匀铺满瀑布
+    }
+
+    p.prevX = p.x;
+    p.prevY = p.y + 3.5;
+    p.prevZ = p.z;
+
+    p.vx = (Math.random() - 0.5) * 2;
+    p.vy = -(110 + Math.random() * 110);
+    p.vz = (Math.random() - 0.5) * 2;
+
+    const col = this._getGoldSandColor();
+    p.r = col.r; p.g = col.g; p.b = col.b;
+    p.active = true;
+    p.life = 0;
+    p.maxLife = 3.8;
+  }
+
   emitParticle(x, y, z, vx, vy, vz, color, size = 3.8, maxLife = 2.0) {
-    for (let i = 0; i < this.maxParticles; i++) {
-      const p = this.particlePool[i];
+    for (let i = this.baseStreamCount; i < this.totalParticles; i++) {
+      const p = this.particles[i];
       if (!p.active) {
         p.active = true;
+        p.isBase = false;
         p.x = x; p.y = y; p.z = z;
+        p.prevX = x - vx * 0.016;
+        p.prevY = y - vy * 0.016;
+        p.prevZ = z - vz * 0.016;
         p.vx = vx; p.vy = vy; p.vz = vz;
         p.r = color.r; p.g = color.g; p.b = color.b;
-        p.baseSize = size;
-        p.size = size;
         p.life = 0;
         p.maxLife = maxLife;
         return;
@@ -1269,27 +1266,7 @@ export class GoldFallSystem {
       this.spawnEntity();
     }
 
-    // 2. 注入背景细微金沙瀑布（受流沙整体宽度联动控制）
-    const bgHalfW = this.streamWidth * 0.58;
-    for (let k = 0; k < 6; k++) {
-      const bgR = Math.sqrt(Math.random()) * bgHalfW;
-      const bgTheta = Math.random() * Math.PI * 2;
-      const bgX = Math.cos(bgTheta) * bgR;
-      const bgY = 230 + Math.random() * 20;
-      const bgZ = Math.sin(bgTheta) * (bgR * 0.45);
-      const col = this._getGoldSandColor();
-      this.emitParticle(
-        bgX, bgY, bgZ,
-        (Math.random() - 0.5) * 3,
-        -(75 + Math.random() * 75),
-        (Math.random() - 0.5) * 3,
-        col,
-        2.2 + Math.random() * 1.8,
-        2.8
-      );
-    }
-
-    // 3. 更新所有下落实体
+    // 2. 更新所有下落实体（大件金币、宝石、珍珠）
     for (let i = this.entities.length - 1; i >= 0; i--) {
       const e = this.entities[i];
       e.timeAlive += dt;
@@ -1314,7 +1291,6 @@ export class GoldFallSystem {
 
       const curPos = e.mesh.position;
 
-      // 3D 金樽物理碰撞检测与动力学响应（宝石外接碰撞半径提升至 11.5，杜绝陷入微隙）
       // 3D 实心导流障碍物碰撞与柔性自然“散开、撒开”动力学
       const colRadius = e.type === 'coin' ? 13.5 : (e.type === 'pearl' ? 5.0 * e.baseScale : 11.5 * e.baseScale);
       if (this.glassEnabled) {
@@ -1370,15 +1346,22 @@ export class GoldFallSystem {
             }
           }
 
-          // 3. 切向重力驱动（第一版经典物理）：物体沿曲面实际坡度自然滑泻冲散
+          // 3. 切向重力驱动 + 杯沿离心掀起涌浪（Surge Crest）
           const dotGN = -this.gravity * hit.normWorldY;
           const gtX = -dotGN * hit.normWorldX;
           const gtY = -this.gravity - dotGN * hit.normWorldY;
           const gtZ = -dotGN * hit.normWorldZ;
 
-          e.vx += (gtX * 0.90 + hit.scatX * 36) * dt;
-          e.vy += (gtY * 0.90 + hit.scatY * 36) * dt;
-          e.vz += (gtZ * 0.90 + hit.scatZ * 36) * dt;
+          let surgeY = 0;
+          let surgeOut = 0;
+          if (hit.isLip || (hit.ly >= 38 && hit.ly <= 52)) {
+            surgeY = 38;       // 乘浪掀起弧度
+            surgeOut = 55;     // 向外翻卷散开
+          }
+
+          e.vx += (gtX * 0.90 + hit.scatX * (36 + surgeOut)) * dt;
+          e.vy += (gtY * 0.90 + hit.scatY * 36 + surgeY) * dt;
+          e.vz += (gtZ * 0.90 + hit.scatZ * (36 + surgeOut)) * dt;
 
           // 4. 有限驻留与安全脱离（吞吐守恒，杜绝断流停发与死锁）
           e.dwellTime = (e.dwellTime || 0) + dt;
@@ -1481,73 +1464,125 @@ export class GoldFallSystem {
       }
     }
 
-    // 4. 更新微粒系统
-    let activeIdx = 0;
-    const pPos = this.pPositions;
-    const pCol = this.pColors;
-    const pSize = this.pSizes;
+    // 4. 更新微粒系统（双通道：LineSegments 流线拖影 + Points 闪烁光珠）
+    const linePos = this.linePositions;
+    const lineCol = this.lineColors;
+    const ptPos = this.ptPositions;
+    const ptCol = this.ptColors;
 
-    for (let i = 0; i < this.maxParticles; i++) {
-      const p = this.particlePool[i];
+    let activeCount = 0;
+
+    for (let i = 0; i < this.totalParticles; i++) {
+      const p = this.particles[i];
       if (!p.active) continue;
 
       p.life += dt;
+
+      // 寿命与下边界检测：常驻流沙循环复活，消融迸发粒子消亡回收
       if (p.life >= p.maxLife || p.y <= this.bottomY) {
-        p.active = false;
-        continue;
+        if (p.isBase) {
+          this._respawnBaseParticle(p, false);
+        } else {
+          p.active = false;
+          continue;
+        }
       }
 
-      p.vy -= (this.gravity * 0.8) * dt;
+      // 记录前一帧位置（用于 LineSegments 绘制速度流线光线）
+      p.prevX = p.x;
+      p.prevY = p.y;
+      p.prevZ = p.z;
+
+      // 重力加速度积分
+      p.vy -= (this.gravity * 0.85) * dt;
+
+      // 3D 阻挡物曲面切向导流与杯唇掀浪碰撞
+      if (this.glassEnabled && p.y >= this.glassPosY - 110 && p.y <= this.glassPosY + 70) {
+        const hit = this._solveGlassCollision(p, 1.8);
+        if (hit) {
+          // 推出穿模深度
+          p.x += hit.normWorldX * hit.pen;
+          p.y += hit.normWorldY * hit.pen;
+          p.z += hit.normWorldZ * hit.pen;
+
+          // 曲面切向重力驱动
+          const dotGN = -(this.gravity * 0.85) * hit.normWorldY;
+          const gtX = -dotGN * hit.normWorldX;
+          const gtY = -(this.gravity * 0.85) - dotGN * hit.normWorldY;
+          const gtZ = -dotGN * hit.normWorldZ;
+
+          // 杯沿掀起水幕涌浪（还原第一版标志性涌起与外翻水幕散开）
+          let surgeY = 0;
+          let surgeOut = 0;
+          if (hit.isLip || (hit.ly >= 36 && hit.ly <= 53)) {
+            surgeY = 52;
+            surgeOut = 75;
+          }
+
+          p.vx = p.vx * 0.86 + (gtX * 0.85 + hit.scatX * (36 + surgeOut)) * dt;
+          p.vy = p.vy * 0.86 + (gtY * 0.85 + hit.scatY * 36 + surgeY) * dt;
+          p.vz = p.vz * 0.86 + (gtZ * 0.85 + hit.scatZ * (36 + surgeOut)) * dt;
+        }
+      }
+
+      // 位移积分与速度阻尼
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.z += p.vz * dt;
       p.vx *= 0.985;
       p.vz *= 0.985;
 
-      // 细沙与 3D 阻挡物曲面切向水幕冲刷（还原第一版流体流沙质感，零 GC）
-      if (this.glassEnabled && p.y >= this.glassPosY - 110 && p.y <= this.glassPosY + 70) {
-        const hit = this._solveGlassCollision(p, 1.8);
-        if (hit) {
-          // 贴合曲面位置修正（推出穿模深度）
-          p.x += hit.normWorldX * hit.pen;
-          p.y += hit.normWorldY * hit.pen;
-          p.z += hit.normWorldZ * hit.pen;
+      // 写入头部闪烁高光点缓冲
+      const ptIdx = activeCount * 3;
+      ptPos[ptIdx]     = p.x;
+      ptPos[ptIdx + 1] = p.y;
+      ptPos[ptIdx + 2] = p.z;
 
-          // 曲面切向重力分解驱动（第一版经典物理）
-          const dotGN = -(this.gravity * 0.8) * hit.normWorldY;
-          const gtX = -dotGN * hit.normWorldX;
-          const gtY = -(this.gravity * 0.8) - dotGN * hit.normWorldY;
-          const gtZ = -dotGN * hit.normWorldZ;
+      // 写入流线短线缓冲：起点 (prevX, prevY, prevZ) -> 终点 (x, y, z)
+      const lIdx = activeCount * 6;
+      linePos[lIdx]     = p.prevX;
+      linePos[lIdx + 1] = p.prevY;
+      linePos[lIdx + 2] = p.prevZ;
+      linePos[lIdx + 3] = p.x;
+      linePos[lIdx + 4] = p.y;
+      linePos[lIdx + 5] = p.z;
 
-          // 贴附曲面并向四周冲刷滑散（第一版流沙水幕公式）
-          p.vx = p.vx * 0.86 + (gtX * 0.85 + hit.scatX * 26) * dt;
-          p.vy = p.vy * 0.86 + (gtY * 0.85 + hit.scatY * 26) * dt;
-          p.vz = p.vz * 0.86 + (gtZ * 0.85 + hit.scatZ * 26) * dt;
-        }
+      // 闪烁波动与透明度淡出
+      const wave = Math.sin(p.life * p.twinkleSpeed + p.twinklePhase);
+      const sparkle = 0.75 + 0.25 * wave;
+      let alpha = 1.0;
+      if (!p.isBase) {
+        const progress = p.life / p.maxLife;
+        alpha = progress > 0.65 ? (1.0 - progress) / 0.35 : 1.0;
       }
 
-      const progress = p.life / p.maxLife;
-      const alphaFade = progress > 0.7 ? (1.0 - progress) / 0.3 : 1.0;
-      const twinkle = 0.75 + Math.sin(p.life * p.twinkleSpeed + p.twinklePhase) * 0.25;
+      const cr = p.r * sparkle * alpha;
+      const cg = p.g * sparkle * alpha;
+      const cb = p.b * sparkle * alpha;
 
-      pPos[activeIdx * 3]     = p.x;
-      pPos[activeIdx * 3 + 1] = p.y;
-      pPos[activeIdx * 3 + 2] = p.z;
+      // 短线尾部 35% 亮度淡入，头部 95% 饱满金光
+      lineCol[lIdx]     = cr * 0.35;
+      lineCol[lIdx + 1] = cg * 0.35;
+      lineCol[lIdx + 2] = cb * 0.35;
+      lineCol[lIdx + 3] = cr * 0.95;
+      lineCol[lIdx + 4] = cg * 0.95;
+      lineCol[lIdx + 5] = cb * 0.95;
 
-      pCol[activeIdx * 3]     = p.r * twinkle * alphaFade;
-      pCol[activeIdx * 3 + 1] = p.g * twinkle * alphaFade;
-      pCol[activeIdx * 3 + 2] = p.b * twinkle * alphaFade;
+      // 头部光珠 125% 炫目光点
+      ptCol[ptIdx]     = cr * 1.25;
+      ptCol[ptIdx + 1] = cg * 1.25;
+      ptCol[ptIdx + 2] = cb * 1.25;
 
-      pSize[activeIdx] = p.baseSize * alphaFade * twinkle;
-
-      activeIdx++;
+      activeCount++;
     }
 
-    this.activeParticleCount = activeIdx;
-    this.pGeom.setDrawRange(0, activeIdx);
-    this.pGeom.attributes.position.needsUpdate = true;
-    this.pGeom.attributes.color.needsUpdate = true;
-    this.pGeom.attributes.size.needsUpdate = true;
+    this.activeParticleCount = activeCount;
+    this.lineGeom.setDrawRange(0, activeCount * 2);
+    this.ptGeom.setDrawRange(0, activeCount);
+    this.lineGeom.attributes.position.needsUpdate = true;
+    this.lineGeom.attributes.color.needsUpdate = true;
+    this.ptGeom.attributes.position.needsUpdate = true;
+    this.ptGeom.attributes.color.needsUpdate = true;
   }
 
   /* ----------------------------------------------------
@@ -1613,11 +1648,19 @@ export class GoldFallSystem {
       this.group.remove(e.mesh);
     }
     this.entities = [];
-    for (const p of this.particlePool) {
-      p.active = false;
+    for (let i = 0; i < this.totalParticles; i++) {
+      const p = this.particles[i];
+      if (i < this.baseStreamCount) {
+        this._respawnBaseParticle(p, true);
+      } else {
+        p.active = false;
+      }
     }
-    this.activeParticleCount = 0;
-    this.pGeom.setDrawRange(0, 0);
+    this.activeParticleCount = this.baseStreamCount;
+    this.lineGeom.setDrawRange(0, this.baseStreamCount * 2);
+    this.ptGeom.setDrawRange(0, this.baseStreamCount);
+    this.lineGeom.attributes.position.needsUpdate = true;
+    this.ptGeom.attributes.position.needsUpdate = true;
   }
 
   destroy() {
