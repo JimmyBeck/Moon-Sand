@@ -8,6 +8,11 @@
  */
 import * as THREE from 'three';
 
+// 零 GC 预分配力学计算矢量
+const _rollAxis = new THREE.Vector3();
+const _tempVel = new THREE.Vector3();
+const _tempNorm = new THREE.Vector3();
+
 export class GoldFallSystem {
   constructor(scene) {
     this.scene = scene;
@@ -475,7 +480,7 @@ export class GoldFallSystem {
       envMapIntensity: 3.2
     });
 
-    // 3. 祖母绿：立体长方八角倒棱阶梯切工（3D Emerald Cut + 物理透光火彩）
+    // 3. 祖母绿：立体长方八角倒棱阶梯切工（3D Emerald Cut + 物理透光火彩 + 棱镜色散）
     this.emeraldMat = new THREE.MeshPhysicalMaterial({
       color: 0x00e676,
       transmission: 0.88,
@@ -487,13 +492,14 @@ export class GoldFallSystem {
       attenuationDistance: 11.0,
       roughness: 0.04,
       metalness: 0.04,
+      dispersion: 0.08,           // PBR 物理折射火彩色散
       clearcoat: 1.0,
       clearcoatRoughness: 0.04,
       flatShading: true,
       envMapIntensity: 3.2
     });
 
-    // 4. 红宝石：立体明亮式圆锥钻石切工（3D Round Brilliant Diamond Cut + 高折射鸽血红）
+    // 4. 红宝石：立体明亮式圆锥钻石切工（3D Round Brilliant Diamond Cut + 高折射鸽血红 + 强色散）
     this.rubyMat = new THREE.MeshPhysicalMaterial({
       color: 0xff1744,
       transmission: 0.86,
@@ -505,6 +511,7 @@ export class GoldFallSystem {
       attenuationDistance: 9.5,
       roughness: 0.04,
       metalness: 0.04,
+      dispersion: 0.10,           // PBR 物理折射火彩色散
       clearcoat: 1.0,
       clearcoatRoughness: 0.04,
       flatShading: true,
@@ -698,6 +705,20 @@ export class GoldFallSystem {
     const rimBackLight = new THREE.DirectionalLight(0xfffae8, 1.8);
     rimBackLight.position.set(130, -80, -180);
     this.lightGroup.add(rimBackLight);
+
+    // 顶部假体积圣光锥（微弱半透 + Additive 柔和加色，烘托天降财宝氛围）
+    const beamGeom = new THREE.CylinderGeometry(10, 80, 420, 32, 1, true);
+    this.beamMat = new THREE.MeshBasicMaterial({
+      color: 0xffefb8,
+      transparent: true,
+      opacity: 0.042,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+    this.beamMesh = new THREE.Mesh(beamGeom, this.beamMat);
+    this.beamMesh.position.set(0, 40, 0);
+    this.lightGroup.add(this.beamMesh);
 
     this.group.add(this.lightGroup);
   }
@@ -1259,6 +1280,12 @@ export class GoldFallSystem {
     const dt = rawDt * this.timeScale;
     if (dt <= 0) return;
 
+    // 假体积圣光呼吸动效
+    if (this.beamMat) {
+      this.beamTime = (this.beamTime || 0) + dt;
+      this.beamMat.opacity = 0.040 + 0.016 * Math.sin(this.beamTime * 1.6);
+    }
+
     // 1. 定期注生宏观实体
     this.spawnTimer += dt;
     if (this.spawnTimer >= 1 / this.spawnRate) {
@@ -1280,22 +1307,26 @@ export class GoldFallSystem {
       e.mesh.position.y += e.vy * dt;
       e.mesh.position.z += e.vz * dt;
 
-      // 角速度空气与滚动阻尼：每帧自然平息自转，杜绝永恒空转
-      e.rotSpeed.x *= 0.982;
-      e.rotSpeed.y *= 0.982;
-      e.rotSpeed.z *= 0.982;
-
-      e.mesh.rotation.x += e.rotSpeed.x * dt;
-      e.mesh.rotation.y += e.rotSpeed.y * dt;
-      e.mesh.rotation.z += e.rotSpeed.z * dt;
-
       const curPos = e.mesh.position;
+      let onSurface = false;
 
       // 3D 实心导流障碍物碰撞与柔性自然“散开、撒开”动力学
       const colRadius = e.type === 'coin' ? 13.5 : (e.type === 'pearl' ? 5.0 * e.baseScale : 11.5 * e.baseScale);
       if (this.glassEnabled) {
         const hit = this._solveGlassCollision(curPos, colRadius);
         if (hit) {
+          onSurface = true;
+
+          // 贴壁纯滚动力学：计算切向纯滚动轴 (v × n) 驱动沿曲面物理翻滚
+          _tempVel.set(e.vx, e.vy, e.vz);
+          _tempNorm.set(hit.normWorldX, hit.normWorldY, hit.normWorldZ);
+          _rollAxis.crossVectors(_tempVel, _tempNorm);
+          const rollLen = _rollAxis.length();
+          if (rollLen > 1e-4) {
+            _rollAxis.multiplyScalar(1 / rollLen);
+            const rollSpeed = _tempVel.length();
+            e.mesh.rotateOnWorldAxis(_rollAxis, rollSpeed * 0.08 * dt);
+          }
           // 1. 位置外科修正（沿接触法线推挤出表面，避免穿模）
           curPos.x += hit.normWorldX * hit.pen;
           curPos.y += hit.normWorldY * hit.pen;
@@ -1387,6 +1418,16 @@ export class GoldFallSystem {
         } else {
           e.dwellTime = 0;
         }
+      }
+
+      // 空中自由翻滚（未接触曲面时维持自然三维自转）
+      if (!onSurface) {
+        e.rotSpeed.x *= 0.985;
+        e.rotSpeed.y *= 0.985;
+        e.rotSpeed.z *= 0.985;
+        e.mesh.rotation.x += e.rotSpeed.x * dt;
+        e.mesh.rotation.y += e.rotSpeed.y * dt;
+        e.mesh.rotation.z += e.rotSpeed.z * dt;
       }
 
       // 伴生金沙尾迹（彻底外移至实体上方气流尾流区，杜绝穿模）
