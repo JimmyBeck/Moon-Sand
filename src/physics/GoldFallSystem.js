@@ -51,11 +51,19 @@ export class GoldFallSystem {
     this.activeParticleCount = 4200;
     this.particles = [];
 
-    // 3D 碰撞阻挡物（实心导流障碍物：支持高脚金樽与捧金之手 🫴）
-    this.obstacleType = 'glass';  // 'glass' | 'hand'
+    // 3D 碰撞阻挡物（支持高脚金樽、捧金之手 🫴、探云散掌 🌸）
+    this.obstacleType = 'glass';  // 'glass' | 'hand' | 'reaching'
+    this.obstacleScale = 1.0;     // 阻挡物等比缩放因子 (0.5x ~ 1.8x)
+    this.obstacleMeshVisible = true; // 实体轮廓可视性开关（隐形时物理碰撞与切向导流仍 100% 运行）
+    this.coinScaleFactor = 1.0;   // 金币尺寸缩放因子 (0.6x ~ 1.8x)
     this.glassGroup = new THREE.Group();
     this.glassGroup.name = 'WineGlassObstacle';
     this.group.add(this.glassGroup);
+
+    this.reachingGroup = new THREE.Group();
+    this.reachingGroup.name = 'ReachingHandObstacle';
+    this.reachingGroup.visible = false;
+    this.group.add(this.reachingGroup);
 
     this.glassEnabled = true;
     this.glassPosY = -95;
@@ -86,8 +94,10 @@ export class GoldFallSystem {
     this._initMaterials();
     this._initWineGlass();
     this._initPalmHand();
+    this._initReachingHand();
     this._initParticleSystem();
     this._initLighting();
+    this._updateObstacleMeshVisibility();
   }
 
   /* ----------------------------------------------------
@@ -1022,6 +1032,193 @@ export class GoldFallSystem {
     this._updateGlassTransform();
   }
 
+  /* ----------------------------------------------------
+   * 4.5c 3D 探云散掌（Reaching Hand 🌸 现代舞戏剧化变体散掌）
+   * 采用高定丝绢手套材质 + 堆叠褶皱长袖 + 24K 金环 + 五指放射花瓣造型
+   * ---------------------------------------------------- */
+  _initReachingHand() {
+    this.reachingGroup = new THREE.Group();
+    this.reachingGroup.name = 'ReachingHandObstacle';
+    this.reachingGroup.visible = (this.obstacleType === 'reaching');
+    this.group.add(this.reachingGroup);
+
+    // 歌剧丝绸高定手套 PBR 材质（微带珠光丝绢高光，与落金珠宝形成明暗映衬）
+    this.reachingGloveMat = new THREE.MeshPhysicalMaterial({
+      color: 0xf0f4f8,
+      roughness: 0.28,
+      metalness: 0.06,
+      clearcoat: 0.85,
+      clearcoatRoughness: 0.12,
+      sheen: 0.90,
+      sheenColor: new THREE.Color(0xffffff),
+      sheenRoughness: 0.22,
+      side: THREE.DoubleSide
+    });
+
+    const gloveMat = this.reachingGloveMat;
+    const goldMat = this.glassGoldMat;
+
+    // 1. 前臂与手套长袖 (Forearm & Ruched Sleeve: 自 -Z 方倾斜伸入)
+    const armGeom = new THREE.CylinderGeometry(14.0, 18.0, 52, 32);
+    armGeom.rotateX(Math.PI * 0.5);
+    armGeom.rotateX(0.14);
+    armGeom.translate(0, -9.5, -45);
+    const armMesh = new THREE.Mesh(armGeom, gloveMat);
+    armMesh.castShadow = true;
+    this.reachingGroup.add(armMesh);
+
+    // 堆叠褶皱环 (Ruched Silk Folds: 5 道立体起伏堆叠波浪)
+    const foldZs = [-55, -46, -38, -30, -23];
+    const foldRadii = [17.5, 16.8, 16.0, 15.2, 14.8];
+    const foldTubes = [1.8, 1.9, 1.7, 1.8, 1.6];
+    for (let i = 0; i < foldZs.length; i++) {
+      const foldGeom = new THREE.TorusGeometry(foldRadii[i], foldTubes[i], 12, 32);
+      const foldMesh = new THREE.Mesh(foldGeom, gloveMat);
+      const yOffset = -9.5 + (foldZs[i] + 45) * 0.14;
+      foldMesh.position.set(0, yOffset, foldZs[i]);
+      foldMesh.rotation.x = 0.14 + (i % 2 === 0 ? 0.08 : -0.06);
+      foldMesh.rotation.z = (i % 2 === 0 ? 0.05 : -0.05);
+      this.reachingGroup.add(foldMesh);
+    }
+
+    // 腕部 24K 黄金嵌饰金镯 (Gold Wrist Cuff)
+    const cuffGeom = new THREE.TorusGeometry(15.4, 2.0, 16, 40);
+    const cuffMesh = new THREE.Mesh(cuffGeom, goldMat);
+    cuffMesh.position.set(0, -6.0, -20);
+    cuffMesh.rotation.x = 0.14;
+    this.reachingGroup.add(cuffMesh);
+
+    // 2. 掌心基座与肌肉群 (Palm Bed & Eminences)
+    const palmShape = new THREE.Shape();
+    palmShape.moveTo(-18, -19);
+    palmShape.quadraticCurveTo(-22, -2, -16, 12);  // 小指外侧缘
+    palmShape.quadraticCurveTo(0, 15, 14, 12);     // 远端掌骨横弓（指根）
+    palmShape.quadraticCurveTo(22, 1, 18, -11);    // 虎口至大鱼际
+    palmShape.quadraticCurveTo(10, -20, -18, -19); // 腕关节线
+
+    const palmExtrude = {
+      depth: 7.5,
+      bevelEnabled: true,
+      bevelSegments: 4,
+      steps: 1,
+      bevelSize: 2.6,
+      bevelThickness: 2.2
+    };
+    const palmGeom = new THREE.ExtrudeGeometry(palmShape, palmExtrude);
+    palmGeom.rotateX(Math.PI * 0.5);
+    const palmMesh = new THREE.Mesh(palmGeom, gloveMat);
+    palmMesh.castShadow = true;
+    this.reachingGroup.add(palmMesh);
+
+    // 大鱼际厚肌 (Thenar)
+    const thenarGeom = new THREE.SphereGeometry(8.5, 20, 20);
+    thenarGeom.scale(1.15, 0.60, 1.30);
+    const thenarMesh = new THREE.Mesh(thenarGeom, gloveMat);
+    thenarMesh.position.set(11, 0.8, -4);
+    this.reachingGroup.add(thenarMesh);
+
+    // 小鱼际厚肌 (Hypothenar)
+    const hypoGeom = new THREE.SphereGeometry(7.5, 20, 20);
+    hypoGeom.scale(0.95, 0.55, 1.40);
+    const hypoMesh = new THREE.Mesh(hypoGeom, gloveMat);
+    hypoMesh.position.set(-12, 0.6, -5);
+    this.reachingGroup.add(hypoMesh);
+
+    // 3. 构建五指独立花瓣造型 (Five Reaching Digits: 放射伸展，立体错落)
+    const makeFingerChain = (rootPos, rotEuler, segLengths, baseR, hasRing = false, ringPos = null) => {
+      const fGroup = new THREE.Group();
+      fGroup.position.copy(rootPos);
+      fGroup.rotation.copy(rotEuler);
+
+      let curZ = 0;
+      let curR = baseR;
+      for (let s = 0; s < segLengths.length; s++) {
+        const segLen = segLengths[s];
+        const nextR = curR * 0.86;
+        const sGeom = new THREE.CylinderGeometry(nextR, curR, segLen, 16);
+        sGeom.rotateX(Math.PI * 0.5);
+        sGeom.translate(0, 0, segLen * 0.5);
+        const sMesh = new THREE.Mesh(sGeom, gloveMat);
+        sMesh.position.set(0, 0, curZ);
+        fGroup.add(sMesh);
+
+        curZ += segLen;
+        curR = nextR;
+
+        // 关节微球
+        const jGeom = new THREE.SphereGeometry(curR * 1.05, 14, 14);
+        const jMesh = new THREE.Mesh(jGeom, gloveMat);
+        jMesh.position.set(0, 0, curZ);
+        fGroup.add(jMesh);
+      }
+
+      // 指尖柔润圆球 (Finger Tip Pad)
+      const tipGeom = new THREE.SphereGeometry(curR * 1.10, 16, 16);
+      tipGeom.scale(1.0, 0.85, 1.25);
+      const tipMesh = new THREE.Mesh(tipGeom, gloveMat);
+      tipMesh.position.set(0, 0, curZ);
+      fGroup.add(tipMesh);
+
+      // 关节金环
+      if (hasRing && ringPos) {
+        const rGeom = new THREE.TorusGeometry(baseR * 0.96, 0.48, 12, 24);
+        const rMesh = new THREE.Mesh(rGeom, goldMat);
+        rMesh.position.set(0, 0, ringPos);
+        fGroup.add(rMesh);
+      }
+
+      this.reachingGroup.add(fGroup);
+    };
+
+    // 0: 拇指 (Thumb - 向右强力平张外展，形成平展花瓣侧翼)
+    makeFingerChain(
+      new THREE.Vector3(15.0, 0.6, -3.0),
+      new THREE.Euler(-0.06, 1.18, 0.0, 'YXZ'),
+      [13, 12],
+      4.2,
+      true,
+      13
+    );
+
+    // 1: 食指 (Index - 关键特征：一根手指向下探出，前倾跌水滑槽，下倾 22 度)
+    makeFingerChain(
+      new THREE.Vector3(9.2, 0.8, 13.5),
+      new THREE.Euler(0.38, 0.02, 0.0, 'YXZ'),
+      [14, 12, 11],
+      4.0,
+      true,
+      14
+    );
+
+    // 2: 中指 (Middle - 水平向前，花心平托，末节微扬)
+    makeFingerChain(
+      new THREE.Vector3(1.6, 1.0, 15.0),
+      new THREE.Euler(-0.04, -0.05, 0.0, 'YXZ'),
+      [15, 13, 12],
+      4.2
+    );
+
+    // 3: 无名指 (Ring - 向左前上扬，花瓣中层)
+    makeFingerChain(
+      new THREE.Vector3(-6.2, 0.8, 14.0),
+      new THREE.Euler(-0.28, -0.42, 0.0, 'YXZ'),
+      [14, 12, 11],
+      4.0
+    );
+
+    // 4: 小指 (Pinky - 大角度左展，花瓣上翻翘尖，上扬 32 度)
+    makeFingerChain(
+      new THREE.Vector3(-13.5, 0.2, 11.5),
+      new THREE.Euler(-0.55, -0.84, 0.0, 'YXZ'),
+      [12, 10, 10],
+      3.6,
+      true,
+      12
+    );
+
+    this._updateGlassTransform();
+  }
+
   _updateGlassTransform() {
     this.glassPos.set(0, this.glassPosY, 0);
     this.glassEuler.set(this.glassPitch, 0, this.glassRoll, 'YXZ');
@@ -1032,10 +1229,17 @@ export class GoldFallSystem {
     if (this.glassGroup) {
       this.glassGroup.position.copy(this.glassPos);
       this.glassGroup.rotation.copy(this.glassEuler);
+      this.glassGroup.scale.setScalar(this.obstacleScale);
     }
     if (this.handGroup) {
       this.handGroup.position.copy(this.glassPos);
       this.handGroup.rotation.copy(this.glassEuler);
+      this.handGroup.scale.setScalar(this.obstacleScale);
+    }
+    if (this.reachingGroup) {
+      this.reachingGroup.position.copy(this.glassPos);
+      this.reachingGroup.rotation.copy(this.glassEuler);
+      this.reachingGroup.scale.setScalar(this.obstacleScale);
     }
   }
 
@@ -1044,7 +1248,9 @@ export class GoldFallSystem {
    * ---------------------------------------------------- */
   _solveObstacleCollision(worldPos, radius) {
     if (!this.glassEnabled) return null;
-    if (this.obstacleType === 'hand') {
+    if (this.obstacleType === 'reaching') {
+      return this._solveReachingHandCollision(worldPos, radius);
+    } else if (this.obstacleType === 'hand') {
       return this._solveHandCollision(worldPos, radius);
     } else {
       return this._solveGlassCollision(worldPos, radius);
@@ -1054,7 +1260,7 @@ export class GoldFallSystem {
   _solveHandCollision(worldPos, radius) {
     if (!this.glassEnabled || this.obstacleType !== 'hand') return null;
 
-    // 转换至阻挡物本地坐标
+    // 转换至阻挡物本地坐标并按物体缩放归一化到基准尺度
     const lpX = worldPos.x - this.glassPos.x;
     const lpY = worldPos.y - this.glassPos.y;
     const lpZ = worldPos.z - this.glassPos.z;
@@ -1065,14 +1271,16 @@ export class GoldFallSystem {
     const iz =  qw * lpZ + qx * lpY - qy * lpX;
     const iw = -qx * lpX - qy * lpY - qz * lpZ;
 
-    const lx = ix * qw + iw * -qx + iy * -qz - iz * -qy;
-    const ly = iy * qw + iw * -qy + iz * -qx - ix * -qz;
-    const lz = iz * qw + iw * -qz + ix * -qy - iy * -qx;
+    const invS = 1.0 / (this.obstacleScale || 1.0);
+    const lx = (ix * qw + iw * -qx + iy * -qz - iz * -qy) * invS;
+    const ly = (iy * qw + iw * -qy + iz * -qx - ix * -qz) * invS;
+    const lz = (iz * qw + iw * -qz + ix * -qy - iy * -qx) * invS;
+    const scaledR = radius * invS;
 
     // 手部包围盒快速裁剪 (lx: -30 ~ 30, lz: -55 ~ 52, ly: -35 ~ 35)
-    if (ly < -35 - radius || ly > 35 + radius) return null;
-    if (lx < -30 - radius || lx > 30 + radius) return null;
-    if (lz < -55 - radius || lz > 52 + radius) return null;
+    if (ly < -35 - scaledR || ly > 35 + scaledR) return null;
+    if (lx < -30 - scaledR || lx > 30 + scaledR) return null;
+    if (lz < -55 - scaledR || lz > 52 + scaledR) return null;
 
     // 1. 掌心与指腹曲面函数 (Palm & Finger Surface Equation)
     let expectedY = 0;
@@ -1112,10 +1320,10 @@ export class GoldFallSystem {
       nLocZ = -0.30;
     }
 
-    const surfaceY = expectedY + radius;
-    if (ly > surfaceY || ly < surfaceY - 26 - radius) return null;
+    const surfaceY = expectedY + scaledR;
+    if (ly > surfaceY || ly < surfaceY - 26 - scaledR) return null;
 
-    const pen = surfaceY - ly;
+    const pen = (surfaceY - ly) * this.obstacleScale;
     const nLen = Math.hypot(nLocX, nLocY, nLocZ);
     nLocX /= nLen;
     nLocY /= nLen;
@@ -1153,18 +1361,20 @@ export class GoldFallSystem {
     res.scatZ = sz;
     res.isLip = isLip;
     res.isOuter = isLip;
-    res.ly = ly;
-    res.r = Math.hypot(lx, lz);
+    res.ly = ly * this.obstacleScale;
+    res.r = Math.hypot(lx, lz) * this.obstacleScale;
     return res;
   }
 
   /* ----------------------------------------------------
-   * 4.6 局部解析碰撞检测求解器
+   * 4.5d 探云散掌独立骨节胶囊碰撞与指缝穿透求解器
+   * 关键创新：分立五指胶囊几何体（Disjoint Capsule Bones），
+   * 细沙与珠宝落于指间缝隙时完全不受阻挡，顺畅穿透直达下方！
    * ---------------------------------------------------- */
-  _solveGlassCollision(worldPos, radius) {
-    if (!this.glassEnabled) return null;
+  _solveReachingHandCollision(worldPos, radius) {
+    if (!this.glassEnabled || this.obstacleType !== 'reaching') return null;
 
-    // 转换至金樽本地坐标
+    // 转换至阻挡物本地坐标并归一化到基准尺度 (支持 50%~180% 任意缩放)
     const lpX = worldPos.x - this.glassPos.x;
     const lpY = worldPos.y - this.glassPos.y;
     const lpZ = worldPos.z - this.glassPos.z;
@@ -1175,14 +1385,205 @@ export class GoldFallSystem {
     const iz =  qw * lpZ + qx * lpY - qy * lpX;
     const iw = -qx * lpX - qy * lpY - qz * lpZ;
 
-    const lx = ix * qw + iw * -qx + iy * -qz - iz * -qy;
-    const ly = iy * qw + iw * -qy + iz * -qx - ix * -qz;
-    const lz = iz * qw + iw * -qz + ix * -qy - iy * -qx;
+    const invS = 1.0 / (this.obstacleScale || 1.0);
+    const lx = (ix * qw + iw * -qx + iy * -qz - iz * -qy) * invS;
+    const ly = (iy * qw + iw * -qy + iz * -qx - ix * -qz) * invS;
+    const lz = (iz * qw + iw * -qz + ix * -qy - iy * -qx) * invS;
+    const scaledR = radius * invS;
+
+    // 空间快速包围盒粗筛
+    if (ly < -30 - scaledR || ly > 30 + scaledR) return null;
+    if (lx < -42 - scaledR || lx > 44 + scaledR) return null;
+    if (lz < -68 - scaledR || lz > 62 + scaledR) return null;
+
+    let bestHit = null;
+    let maxPen = 0;
+
+    // 1. 掌心微凹承托浅盆 (Palm Basin: 仅覆盖掌心核心区 Z in [-19, 13.5], |X| <= 17.0)
+    if (lz >= -19 && lz <= 13.5 && Math.abs(lx) <= 17.0) {
+      const expY = 0.6 - (lx * lx) * 0.0035 + (lz * lz) * 0.0018;
+      const surfaceY = expY + scaledR;
+      if (ly <= surfaceY && ly >= surfaceY - 14.0 - scaledR) {
+        const pen = (surfaceY - ly) * this.obstacleScale;
+        if (pen > maxPen) {
+          maxPen = pen;
+          let nx = (lx / 17.0) * 0.55;
+          let ny = 1.0;
+          let nz = (lz > 0 ? 0.20 : -0.22);
+          const nLen = Math.hypot(nx, ny, nz);
+          bestHit = {
+            pen: pen,
+            nLocX: nx / nLen,
+            nLocY: ny / nLen,
+            nLocZ: nz / nLen,
+            isLip: false,
+            scatX: lx / 17.0,
+            scatY: 0.15,
+            scatZ: 0.85
+          };
+        }
+      }
+    }
+
+    // 2. 前臂与手腕长袖 (Forearm & Wrist: Z in [-64, -19])
+    if (!bestHit && lz >= -64 && lz < -19) {
+      const armY = -9.5 + (lz + 45) * 0.14;
+      const armR = 14.2 + (lz + 45) * 0.07;
+      const dArm = Math.hypot(lx, ly - armY);
+      if (dArm <= armR + scaledR) {
+        const pen = (armR + scaledR - dArm) * this.obstacleScale;
+        if (pen > maxPen) {
+          maxPen = pen;
+          const nx = dArm > 1e-4 ? lx / dArm : 0;
+          const ny = dArm > 1e-4 ? (ly - armY) / dArm : 1.0;
+          bestHit = {
+            pen: pen,
+            nLocX: nx,
+            nLocY: ny,
+            nLocZ: -0.15,
+            isLip: false,
+            scatX: nx,
+            scatY: 0.2,
+            scatZ: -0.8
+          };
+        }
+      }
+    }
+
+    // 3. 五根独立三维手指骨节胶囊体（Disjoint Capsule Bones & Gap Penetration）
+    // 关键：若物料位于指缝间，各手指 dist 均大于 (capR + scaledR)，不触发碰撞，物料顺畅从指缝漏下！
+    const fingers = [
+      // 0: 拇指 (Thumb - 右外展平展横翼)
+      { x0: 15.0, y0: 0.6, z0: -3.0, x1: 38.07, y1: 2.10, z1: 6.51, r: 4.2, isChute: false, isWing: true },
+      // 1: 食指 (Index - 关键特征：下俯探出跌水主滑槽，向下冲刷倾泻)
+      { x0: 9.2,  y0: 0.8, z0: 13.5, x1: 9.89,  y1: -12.92, z1: 47.85, r: 4.0, isChute: true, isWing: false },
+      // 2: 中指 (Middle - 水平向前，主承托脊)
+      { x0: 1.6,  y0: 1.0, z0: 15.0, x1: -0.40, y1: 2.60, z1: 54.92, r: 4.2, isChute: false, isWing: false },
+      // 3: 无名指 (Ring - 左前上扬花瓣层)
+      { x0: -6.2, y0: 0.8, z0: 14.0, x1: -20.70, y1: 11.03, z1: 46.47, r: 4.0, isChute: false, isWing: false },
+      // 4: 小指 (Pinky - 左展高翘花瓣尖)
+      { x0: -13.5, y0: 0.2, z0: 11.5, x1: -33.81, y1: 16.93, z1: 29.71, r: 3.6, isChute: false, isWing: true }
+    ];
+
+    for (let k = 0; k < 5; k++) {
+      const f = fingers[k];
+      const fdx = f.x1 - f.x0, fdy = f.y1 - f.y0, fdz = f.z1 - f.z0;
+      const lenSq = fdx * fdx + fdy * fdy + fdz * fdz;
+      let t = ((lx - f.x0) * fdx + (ly - f.y0) * fdy + (lz - f.z0) * fdz) / lenSq;
+      t = Math.max(0, Math.min(1, t));
+
+      const cx = f.x0 + t * fdx;
+      const cy = f.y0 + t * fdy;
+      const cz = f.z0 + t * fdz;
+
+      const dist = Math.hypot(lx - cx, ly - cy, lz - cz);
+      const capR = f.r * (1.0 - t * 0.20); // 指尖柔化微缩
+
+      if (dist < capR + scaledR) {
+        const pen = (capR + scaledR - dist) * this.obstacleScale;
+        if (pen > maxPen) {
+          maxPen = pen;
+
+          let nx = dist > 1e-4 ? (lx - cx) / dist : 0;
+          let ny = dist > 1e-4 ? (ly - cy) / dist : 1.0;
+          let nz = dist > 1e-4 ? (lz - cz) / dist : 0;
+
+          // 确保指背上表面具有向上托举法向
+          if (ny < 0.25 && ly >= cy - capR * 0.3) ny = 0.65;
+          const nLen = Math.hypot(nx, ny, nz);
+          nx /= nLen; ny /= nLen; nz /= nLen;
+
+          const isLip = (t >= 0.82) || f.isWing;
+
+          // 切向发散方向：食指沿下坡滑槽倾泻，其余手指顺骨节向外翻滚
+          let sDirX = f.isChute ? 0.05 : (fdx / 30);
+          let sDirY = f.isChute ? -0.42 : (fdy / 30);
+          let sDirZ = f.isChute ? 0.95 : (fdz / 30);
+          const sDirLen = Math.hypot(sDirX, sDirY, sDirZ);
+
+          bestHit = {
+            pen: pen,
+            nLocX: nx,
+            nLocY: ny,
+            nLocZ: nz,
+            isLip: isLip,
+            scatX: sDirX / sDirLen,
+            scatY: sDirY / sDirLen,
+            scatZ: sDirZ / sDirLen
+          };
+        }
+      }
+    }
+
+    if (bestHit) {
+      const m = this.glassRotMat.elements;
+      const nx = bestHit.nLocX, ny = bestHit.nLocY, nz = bestHit.nLocZ;
+      const nwx = m[0] * nx + m[3] * ny + m[6] * nz;
+      const nwy = m[1] * nx + m[4] * ny + m[7] * nz;
+      const nwz = m[2] * nx + m[5] * ny + m[8] * nz;
+
+      const sx0 = bestHit.scatX, sy0 = bestHit.scatY, sz0 = bestHit.scatZ;
+      const rx = m[0] * sx0 + m[3] * sy0 + m[6] * sz0;
+      const ry = m[1] * sx0 + m[4] * sy0 + m[7] * sz0;
+      const rz = m[2] * sx0 + m[5] * sy0 + m[8] * sz0;
+
+      const dotRN = rx * nwx + ry * nwy + rz * nwz;
+      let sx = rx - dotRN * nwx;
+      let sy = ry - dotRN * nwy;
+      let sz = rz - dotRN * nwz;
+      const sLen = Math.hypot(sx, sy, sz);
+      if (sLen > 1e-4) {
+        sx /= sLen; sy /= sLen; sz /= sLen;
+      } else {
+        sx = m[6]; sy = m[7]; sz = m[8];
+      }
+
+      const res = this._hitResult;
+      res.pen = bestHit.pen;
+      res.normWorldX = nwx;
+      res.normWorldY = nwy;
+      res.normWorldZ = nwz;
+      res.scatX = sx;
+      res.scatY = sy;
+      res.scatZ = sz;
+      res.isLip = bestHit.isLip;
+      res.isOuter = bestHit.isLip;
+      res.ly = ly * this.obstacleScale;
+      res.r = Math.hypot(lx, lz) * this.obstacleScale;
+      return res;
+    }
+
+    // 未碰撞任何骨节与掌心（位于指缝开放空间）-> 顺畅下落穿透！
+    return null;
+  }
+
+  /* ----------------------------------------------------
+   * 4.6 局部解析碰撞检测求解器
+   * ---------------------------------------------------- */
+  _solveGlassCollision(worldPos, radius) {
+    if (!this.glassEnabled) return null;
+
+    // 转换至金樽本地坐标并按物体缩放归一化到基准尺度
+    const lpX = worldPos.x - this.glassPos.x;
+    const lpY = worldPos.y - this.glassPos.y;
+    const lpZ = worldPos.z - this.glassPos.z;
+
+    const qx = this.glassInvQuat.x, qy = this.glassInvQuat.y, qz = this.glassInvQuat.z, qw = this.glassInvQuat.w;
+    const ix =  qw * lpX + qy * lpZ - qz * lpY;
+    const iy =  qw * lpY + qz * lpX - qx * lpZ;
+    const iz =  qw * lpZ + qx * lpY - qy * lpX;
+    const iw = -qx * lpX - qy * lpY - qz * lpZ;
+
+    const invS = 1.0 / (this.obstacleScale || 1.0);
+    const lx = (ix * qw + iw * -qx + iy * -qz - iz * -qy) * invS;
+    const ly = (iy * qw + iw * -qy + iz * -qx - ix * -qz) * invS;
+    const lz = (iz * qw + iw * -qz + ix * -qy - iy * -qx) * invS;
+    const scaledR = radius * invS;
 
     const r = Math.hypot(lx, lz);
 
-    if (ly < -100 - radius || ly > 58 + radius) return null;
-    if (r > 48 + radius) return null;
+    if (ly < -100 - scaledR || ly > 58 + scaledR) return null;
+    if (r > 48 + scaledR) return null;
 
     const urx = r > 1e-4 ? lx / r : 1;
     const urz = r > 1e-4 ? lz / r : 0;
@@ -1190,14 +1591,14 @@ export class GoldFallSystem {
     let bestHit = null;
 
     // 1. 实心穹顶与杯唇导流表面 (Solid Deflector Crown & Lip Crest)
-    // 覆盖整个杯顶区域 (r <= 43.5 + radius)，消除内凹陷阱，全部赋予外向导流梯度
-    if (r <= 43.5 + radius && ly >= 35.0) {
+    // 覆盖整个杯顶区域 (r <= 43.5 + scaledR)，消除内凹陷阱，全部赋予外向导流梯度
+    if (r <= 43.5 + scaledR && ly >= 35.0) {
       const normR = Math.min(1.0, r / 41.25);
       const expectedY = 51.5 + 1.3 * (1.0 - normR * normR);
-      const topSurfaceY = expectedY + radius;
+      const topSurfaceY = expectedY + scaledR;
 
-      if (ly <= topSurfaceY && ly >= 40.0 - radius) {
-        const pen = topSurfaceY - ly;
+      if (ly <= topSurfaceY && ly >= 40.0 - scaledR) {
+        const pen = (topSurfaceY - ly) * this.obstacleScale;
         const isLip = r >= 34.0;
 
         let nR = isLip ? 0.82 : (0.42 + 0.40 * normR);
@@ -1213,14 +1614,14 @@ export class GoldFallSystem {
           nLocZ: nR * urz,
           isLip: isLip,
           isOuter: false,
-          ly: ly,
-          r: r
+          ly: ly * this.obstacleScale,
+          r: r * this.obstacleScale
         };
       }
     }
 
     // 2. 外碗侧壁、杯挺与底座 (Outer Flank, Stem & Base)
-    if (!bestHit && ly >= -98 - radius && r >= 3.5 - radius) {
+    if (!bestHit && ly >= -98 - scaledR && r >= 3.5 - scaledR) {
       let maxPen = 0;
       for (let i = 0; i < this._outerSegments.length; i++) {
         const seg = this._outerSegments[i];
@@ -1231,19 +1632,19 @@ export class GoldFallSystem {
         const cy = seg.ay + t * seg.dy;
 
         const sDist = (r - cx) * seg.nx + (ly - cy) * seg.ny;
-        if (sDist < radius && sDist > -radius * 1.8) {
-          const pen = radius - sDist;
-          if (pen > maxPen) {
-            maxPen = pen;
+        if (sDist < scaledR && sDist > -scaledR * 1.8) {
+          const penLocal = scaledR - sDist;
+          if (penLocal > maxPen) {
+            maxPen = penLocal;
             bestHit = {
-              pen: pen,
+              pen: penLocal * this.obstacleScale,
               nLocX: seg.nx * urx,
               nLocY: seg.ny,
               nLocZ: seg.nx * urz,
               isLip: false,
               isOuter: true,
-              ly: ly,
-              r: r
+              ly: ly * this.obstacleScale,
+              r: r * this.obstacleScale
             };
           }
         }
@@ -1479,7 +1880,7 @@ export class GoldFallSystem {
       mesh = new THREE.Mesh(this.coinGeom, this.coinMat);
       mass = 1.25;
       drag = 0.988;
-      baseScale = 0.96 + Math.random() * 0.12;
+      baseScale = (0.96 + Math.random() * 0.12) * (this.coinScaleFactor || 1.0);
     } else if (rand < pCoin + pPearl) {
       type = 'pearl';
       mesh = new THREE.Mesh(this.pearlGeom, this.pearlMat);
@@ -1611,7 +2012,7 @@ export class GoldFallSystem {
       let onSurface = false;
 
       // 3D 实心导流障碍物碰撞与柔性自然“散开、撒开”动力学
-      const colRadius = e.type === 'coin' ? 13.5 : (e.type === 'pearl' ? 5.0 * e.baseScale : 11.5 * e.baseScale);
+      const colRadius = e.type === 'coin' ? 13.5 * e.baseScale : (e.type === 'pearl' ? 5.0 * e.baseScale : 11.5 * e.baseScale);
       if (this.glassEnabled) {
         const hit = this._solveObstacleCollision(curPos, colRadius);
         if (hit) {
@@ -1685,9 +2086,10 @@ export class GoldFallSystem {
 
           let surgeY = 0;
           let surgeOut = 0;
-          if (hit.isLip || (hit.ly >= 38 && hit.ly <= 52)) {
-            surgeY = 38;       // 乘浪掀起弧度
-            surgeOut = 55;     // 向外翻卷散开
+          const obsScale = this.obstacleScale || 1.0;
+          if (hit.isLip || (this.obstacleType === 'glass' && hit.ly >= 38 * obsScale && hit.ly <= 52 * obsScale)) {
+            surgeY = 38 * Math.sqrt(this.fallSpeedFactor);
+            surgeOut = 55 * Math.sqrt(this.fallSpeedFactor) * Math.sqrt(obsScale);
           }
 
           e.vx += (gtX * 0.90 + hit.scatX * (36 + surgeOut)) * dt;
@@ -1737,10 +2139,10 @@ export class GoldFallSystem {
         let pvy;
 
         if (e.type === 'coin') {
-          // 金币半径 15.2，尾流发射点严格置于金币上方 16.5 ~ 22.5 处
-          ty = curPos.y + 16.5 + Math.random() * 6;
-          tx = curPos.x + (Math.random() - 0.5) * 8;
-          tz = curPos.z + (Math.random() - 0.5) * 8;
+          // 金币半径 15.2 * baseScale，尾流发射点严格置于金币上方 16.5 ~ 22.5 处
+          ty = curPos.y + (16.5 + Math.random() * 6) * e.baseScale;
+          tx = curPos.x + (Math.random() - 0.5) * 8 * e.baseScale;
+          tz = curPos.z + (Math.random() - 0.5) * 8 * e.baseScale;
           // 初速度相对疾速下坠的金币呈现向上被气流甩脱的拖尾感
           pvy = e.vy * 0.12 - (5 + Math.random() * 12);
         } else {
@@ -1838,7 +2240,8 @@ export class GoldFallSystem {
       p.vy -= (this.gravity * 0.85) * dt;
 
       // 3D 阻挡物曲面切向导流与杯唇掀浪碰撞
-      if (this.glassEnabled && p.y >= this.glassPosY - 110 && p.y <= this.glassPosY + 70) {
+      const obsScale = this.obstacleScale || 1.0;
+      if (this.glassEnabled && p.y >= this.glassPosY - 115 * obsScale && p.y <= this.glassPosY + 75 * obsScale) {
         const hit = this._solveObstacleCollision(p, 1.8);
         if (hit) {
           // 推出穿模深度
@@ -1855,9 +2258,9 @@ export class GoldFallSystem {
           // 边缘与指尖掀起水幕涌浪（还原标志性涌起与外翻水幕散开）
           let surgeY = 0;
           let surgeOut = 0;
-          if (hit.isLip || (this.obstacleType === 'glass' && hit.ly >= 36 && hit.ly <= 53)) {
+          if (hit.isLip || (this.obstacleType === 'glass' && hit.ly >= 36 * obsScale && hit.ly <= 53 * obsScale)) {
             surgeY = 52 * Math.sqrt(this.fallSpeedFactor);
-            surgeOut = 75 * Math.sqrt(this.fallSpeedFactor);
+            surgeOut = 75 * Math.sqrt(this.fallSpeedFactor) * Math.sqrt(obsScale);
           }
 
           p.vx = p.vx * 0.86 + (gtX * 0.85 + hit.scatX * (36 + surgeOut)) * dt;
@@ -1953,17 +2356,44 @@ export class GoldFallSystem {
     this.ratios.gem = Math.max(0, gem);
   }
 
+  _updateObstacleMeshVisibility() {
+    const show = this.glassEnabled && this.obstacleMeshVisible;
+    if (this.glassGroup) this.glassGroup.visible = show && (this.obstacleType === 'glass');
+    if (this.handGroup) this.handGroup.visible = show && (this.obstacleType === 'hand');
+    if (this.reachingGroup) this.reachingGroup.visible = show && (this.obstacleType === 'reaching');
+  }
+
+  setObstacleMeshVisible(visible) {
+    this.obstacleMeshVisible = !!visible;
+    this._updateObstacleMeshVisibility();
+  }
+
   setGlassEnabled(enabled) {
     this.glassEnabled = !!enabled;
-    if (this.glassGroup) this.glassGroup.visible = this.glassEnabled && (this.obstacleType === 'glass');
-    if (this.handGroup) this.handGroup.visible = this.glassEnabled && (this.obstacleType === 'hand');
+    this._updateObstacleMeshVisibility();
     this.dissolveY = this.glassEnabled ? -150 : -80;
   }
 
   setObstacleType(type) {
-    this.obstacleType = type === 'hand' ? 'hand' : 'glass';
-    if (this.glassGroup) this.glassGroup.visible = this.glassEnabled && (this.obstacleType === 'glass');
-    if (this.handGroup) this.handGroup.visible = this.glassEnabled && (this.obstacleType === 'hand');
+    this.obstacleType = (type === 'hand' || type === 'reaching') ? type : 'glass';
+    this._updateObstacleMeshVisibility();
+    this._updateGlassTransform();
+  }
+
+  setCoinScale(scaleFactor) {
+    const prev = this.coinScaleFactor || 1.0;
+    this.coinScaleFactor = Math.max(0.5, Math.min(2.0, scaleFactor));
+    const ratio = this.coinScaleFactor / prev;
+    for (const e of this.entities) {
+      if (e.type === 'coin') {
+        e.baseScale *= ratio;
+        e.mesh.scale.setScalar((e.scale !== undefined ? e.scale : 1.0) * e.baseScale);
+      }
+    }
+  }
+
+  setObstacleScale(scale) {
+    this.obstacleScale = Math.max(0.4, Math.min(2.2, scale));
     this._updateGlassTransform();
   }
 

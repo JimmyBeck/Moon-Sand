@@ -437,7 +437,34 @@ function setupUI() {
   if (ratioPearl) ratioPearl.addEventListener('input', updateRatioUI);
   if (ratioGem) ratioGem.addEventListener('input', updateRatioUI);
 
+  // 金币尺寸 (大小缩放 60% ~ 180%)
+  const goldCoinScaleSlider = document.getElementById('gold-coin-scale-slider');
+  const goldCoinScaleVal = document.getElementById('gold-coin-scale-val');
+  if (goldCoinScaleSlider) {
+    goldCoinScaleSlider.addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
+      if (goldFallSystem) goldFallSystem.setCoinScale(v / 100);
+      if (goldCoinScaleVal) goldCoinScaleVal.innerText = `${v}%`;
+    });
+  }
+
   // 3D 金樽导流体控制绑定 (开关、高度、倾角、减震缓冲)
+  const obsMeshToggleBtn = document.getElementById('gold-obs-mesh-toggle-btn');
+  let obsMeshVisible = true;
+  if (obsMeshToggleBtn) {
+    obsMeshToggleBtn.addEventListener('click', () => {
+      obsMeshVisible = !obsMeshVisible;
+      if (goldFallSystem) goldFallSystem.setObstacleMeshVisible(obsMeshVisible);
+      if (obsMeshVisible) {
+        obsMeshToggleBtn.classList.add('active');
+        obsMeshToggleBtn.innerText = '实体轮廓: 显示';
+      } else {
+        obsMeshToggleBtn.classList.remove('active');
+        obsMeshToggleBtn.innerText = '实体轮廓: 隐形';
+      }
+    });
+  }
+
   const glassToggleBtn = document.getElementById('gold-glass-toggle-btn');
   const glassYSlider = document.getElementById('gold-glass-y-slider');
   const glassYVal = document.getElementById('gold-glass-y-val');
@@ -461,19 +488,33 @@ function setupUI() {
     });
   }
 
-  // 3D 阻挡物形态切换（高脚金樽 vs 捧金之手 🫴）
+  // 3D 阻挡物形态切换（高脚金樽 vs 捧金之手 🫴 vs 探云散掌 🌸）
   const btnObsGlass = document.getElementById('gold-obs-glass');
   const btnObsHand = document.getElementById('gold-obs-hand');
-  if (btnObsGlass && btnObsHand) {
-    btnObsGlass.addEventListener('click', () => {
-      btnObsGlass.classList.add('active');
-      btnObsHand.classList.remove('active');
-      if (goldFallSystem) goldFallSystem.setObstacleType('glass');
-    });
-    btnObsHand.addEventListener('click', () => {
-      btnObsHand.classList.add('active');
-      btnObsGlass.classList.remove('active');
-      if (goldFallSystem) goldFallSystem.setObstacleType('hand');
+  const btnObsReaching = document.getElementById('gold-obs-reaching');
+  const obsBtns = [
+    { el: btnObsGlass, type: 'glass' },
+    { el: btnObsHand, type: 'hand' },
+    { el: btnObsReaching, type: 'reaching' }
+  ];
+  obsBtns.forEach(({ el, type }) => {
+    if (el) {
+      el.addEventListener('click', () => {
+        obsBtns.forEach(item => item.el?.classList.remove('active'));
+        el.classList.add('active');
+        if (goldFallSystem) goldFallSystem.setObstacleType(type);
+      });
+    }
+  });
+
+  // 3D 阻挡物尺寸大小缩放
+  const obsScaleSlider = document.getElementById('gold-obs-scale-slider');
+  const obsScaleVal = document.getElementById('gold-obs-scale-val');
+  if (obsScaleSlider) {
+    obsScaleSlider.addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
+      if (goldFallSystem) goldFallSystem.setObstacleScale(v / 100);
+      if (obsScaleVal) obsScaleVal.innerText = `${v}%`;
     });
   }
 

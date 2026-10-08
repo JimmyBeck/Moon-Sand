@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Moon-Sand · 宝藏坠落 Demo（Three.js）</title>
+<style>
+  html, body { margin:0; padding:0; overflow:hidden; background:#05060a; height:100%; }
+  #app { position:fixed; inset:0; }
+  #hud {
+    position:fixed; top:18px; left:18px; z-index:10; color:#e8d9a8;
+    font-family:"Songti SC","STSong",serif; pointer-events:none;
+    text-shadow:0 0 12px rgba(0,0,0,.9);
+  }
+  #hud h1 { font-size:20px; margin:0 0 6px; letter-spacing:2px; font-weight:600; }
+  #hud .sub { font-size:12px; opacity:.75; margin-bottom:10px; letter-spacing:1px; }
+  #hud ul { font-size:12px; line-height:1.9; margin:0; padding:0; list-style:none; opacity:.85; }
+  #hud li::before { content:"◆ "; color:#c9a227; font-size:10px; }
+  #counts { margin-top:10px; font-size:12px; color:#bfa96a; letter-spacing:1px; }
+  #tip {
+    position:fixed; bottom:16px; left:50%; transform:translateX(-50%); z-index:10;
+    color:#9c8c5e; font-size:12px; font-family:serif; letter-spacing:2px;
+    text-shadow:0 0 8px #000; pointer-events:none;
+  }
+  #fallback {
+    display:none; position:fixed; inset:0; z-index:20; color:#e8d9a8;
+    font-family:serif; text-align:center; padding-top:40vh; background:#05060a;
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="hud">
+  <h1>蒙尘之罪 · 宝藏坠落</h1>
+  <div class="sub">Moon-Sand 扩展方案技术验证 Demo（Three.js WebGL）</div>
+  <ul>
+    <li>InstancedMesh 四类型宝物实例化渲染</li>
+    <li>金币 metalness 金属反射 · 珍珠 iridescence 珠光</li>
+    <li>宝石 transmission 折射 · 钻石 dispersion 火彩色散</li>
+    <li>曲面切向外表面滑移力学（复用 CollisionSolver 思路）</li>
+    <li>金粉 additive 光尘层 + RoomEnvironment + ACES tone mapping</li>
+  </ul>
+  <div id="counts"></div>
+</div>
+<div id="tip">拖拽旋转 · 滚轮缩放</div>
+<div id="fallback">three.js CDN 加载失败<br>请检查网络后刷新</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+window.addEventListener('error', (e) => {
+  if (!window.__threeOK) document.getElementById('fallback').style.display = 'block';
+}, true);
+
+/* ============================================================
+ * 0. 渲染器 / 场景 / 相机 —— ACES + 环境贴图（P3/P4 管线）
+ * ============================================================ */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;      // P4: 物理材质高光必须项
+renderer.toneMappingExposure = 1.15;
+document.getElementById('app').appendChild(renderer.domElement);
+window.__threeOK = true;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x05060a);
+scene.fog = new THREE.Fog(0x05060a, 260, 520);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;  // 金属/宝石反射源
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 1200);
+camera.position.set(60, 95, 195);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 58, 0);
+controls.enableDamping = true;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.5;
+controls.maxDistance = 420; controls.minDistance = 60;
+
+/* 灯光：顶部圣光 + 冷色补光（对齐视频氛围） */
+const spot = new THREE.SpotLight(0xfff2cf, 900, 500, Math.PI/7, 0.55, 1.6);
+spot.position.set(0, 260, 0);
+scene.add(spot, spot.target);
+scene.add(new THREE.AmbientLight(0x1a2030, 1.2));
+
+/* ============================================================
+ * 1. 接住物：独酌高脚杯（外表面滑移承载体，P2）
+ * ============================================================ */
+const G = {   // goblet profile，与原项目 wineglass 配置同构
+  bowlBottomY: 46, bowlTopY: 108, bowlWaistR: 17, bowlTopR: 30,
+  stemBottomY: 12, stemTopY: 46, stemR: 3.2,
+  baseCenterY: 8, baseHeight: 6, baseR: 26
+};
+
+function gobletSurface(u, y, target) {   // 绕 Y 的轮廓点，u ∈ [0, 2π)
+  let r = 0;
+  if (y >= G.bowlBottomY && y <= G.bowlTopY) {
+    const t = (y - G.bowlBottomY) / (G.bowlTopY - G.bowlBottomY);
+    r = THREE.MathUtils.lerp(G.bowlWaistR, G.bowlTopR, Math.pow(t, 0.8));
+  } else if (y > G.stemBottomY && y < G.stemTopY) r = G.stemR;
+  else if (y >= G.baseCenterY - G.baseHeight && y <= G.baseCenterY) r = G.baseR;
+  return target.set(Math.cos(u) * r, y, Math.sin(u) * r);
+}
+
+{ // 车削轮廓生成高脚杯网格
+  const pts = [];
+  const prof = [
+    [G.baseR, G.baseCenterY - G.baseHeight], [G.baseR, G.baseCenterY],
+    [G.stemR*1.6, G.baseCenterY+1.5], [G.stemR, G.stemBottomY+4],
+    [G.stemR, G.stemTopY-4], [G.bowlWaistR, G.bowlBottomY+2]
+  ];
+  prof.forEach(p => pts.push(new THREE.Vector2(p[0], p[1])));
+  for (let y = G.bowlBottomY+4; y <= G.bowlTopY; y += 3) {
+    const t = (y-G.bowlBottomY)/(G.bowlTopY-G.bowlBottomY);
+    pts.push(new THREE.Vector2(THREE.MathUtils.lerp(G.bowlWaistR, G.bowlTopR, Math.pow(t,0.8)), y));
+  }
+  pts.push(new THREE.Vector2(G.bowlTopR+2, G.bowlTopY+1.5));   // 杯沿外撇
+  const geom = new THREE.LatheGeometry(pts, 72);
+  const mat = new THREE.MeshPhysicalMaterial({
+    color: 0x1c2233, metalness: 0.9, roughness: 0.32,
+    envMapIntensity: 0.9, clearcoat: 0.6
+  });
+  const goblet = new THREE.Mesh(geom, mat);
+  scene.add(goblet);
+}
+
+/* ============================================================
+ * 2. 外表面切向滑移求解器（复用 CollisionSolver 核心力学，P2）
+ *    宝物视为质点 + 半径偏移（防穿模）；贴壁滚动 + 顶部分流
+ * ============================================================ */
+const GRAV = 0.13, MAX_FALL = 4.6;
+const _g = new THREE.Vector3(), _gt = new THREE.Vector3();
+
+function slide(p, v, n, proj, radius) {
+  _g.set(0, -GRAV, 0);
+  _gt.copy(_g).addScaledVector(n, -_g.dot(n));      // 重力切向分量
+  v.multiplyScalar(0.86).addScaledVector(_gt, 2.6); // 阻尼 + 切向驱动
+  p.set(proj.x + n.x*radius, proj.y + n.y*radius, proj.z + n.z*radius);
+  if (n.y < 0.08) v.y = Math.min(v.y, -1.6);        // 脱离检测：陡坡自由落
+  return n;
+}
+
+function solveGoblet(p, v, radius) {
+  const r = Math.hypot(p.x, p.z);
+  const nx = p.x/(r||1), nz = p.z/(r||1);
+
+  // 杯腹
+  if (p.y >= G.bowlBottomY-2 && p.y <= G.bowlTopY+4) {
+    const t = THREE.MathUtils.clamp((p.y-G.bowlBottomY)/(G.bowlTopY-G.bowlBottomY), 0, 1);
+    const expectedR = THREE.MathUtils.lerp(G.bowlWaistR, G.bowlTopR, Math.pow(t, 0.8));
+    if (Math.abs(r-expectedR) < radius+1.6 || (r < expectedR && p.y > G.bowlTopY-6)) {
+      const n = new THREE.Vector3(nx, 0.55, nz).normalize();
+      const proj = new THREE.Vector3(nx*expectedR, p.y, nz*expectedR);
+      slide(p, v, n, proj, radius);
+      if (p.y > G.bowlTopY-7 && r < 9)              // 顶点分水岭：推向两肩
+        v.x += (p.x >= 0 ? 1 : -1) * (0.45 + Math.random()*0.3);
+      return n;
+    }
+    return null;
+  }
+  // 杯梗
+  if (p.y > G.stemBottomY && p.y < G.stemTopY && Math.abs(r-G.stemR) < radius+1.2) {
+    const n = new THREE.Vector3(nx, 0.08, nz).normalize();
+    return slide(p, v, n, new THREE.Vector3(nx*G.stemR, p.y, nz*G.stemR), radius), n;
+  }
+  // 底座
+  if (p.y >= G.baseCenterY-2 && p.y < G.baseCenterY+3.5 && r < G.baseR+radius) {
+    const n = new THREE.Vector3(p.x*0.05, 1, p.z*0.05).normalize();
+    slide(p, v, n, new THREE.Vector3(p.x, G.baseCenterY, p.z), radius);
+    if (r > G.baseR-2.5) v.y = Math.min(v.y, -1.1); // 滚出底缘 → 下落
+    return n;
+  }
+  return null;
+}
+
+/* ============================================================
+ * 3. 宝物粒子系统（P1）：类型化 + InstancedMesh + 生命周期
+ * ============================================================ */
+const SPAWNER = new THREE.Vector3(0, 225, 0);   // 顶部一束，营造"被接住"观感
+
+function makeCoinTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const x = c.getContext('2d');
+  const grad = x.createRadialGradient(64,64,6, 64,64,64);
+  grad.addColorStop(0,'#ffe9a0'); grad.addColorStop(.65,'#f3b52a'); grad.addColorStop(1,'#a86f10');
+  x.fillStyle = grad; x.fillRect(0,0,128,128);
+  x.strokeStyle = 'rgba(120,70,5,.85)'; x.lineWidth = 5;
+  [58, 44, 26].forEach(rr => { x.beginPath(); x.arc(64,64,rr,0,Math.PI*2); x.stroke(); });
+  x.lineWidth = 2.5;
+  for (let i=0;i<24;i++){ const a=i/24*Math.PI*2;
+    x.beginPath(); x.moveTo(64+Math.cos(a)*28,64+Math.sin(a)*28);
+    x.lineTo(64+Math.cos(a)*42,64+Math.sin(a)*42); x.stroke(); }
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/* —— 四类光泽材质（P3 材质工厂的核心参数） —— */
+function makeMaterials() {
+  return {
+    coin: new THREE.MeshPhysicalMaterial({          // 金属反射
+      map: makeCoinTexture(), color: 0xffffff,
+      metalness: 1.0, roughness: 0.28, envMapIntensity: 1.25
+    }),
+    pearl: new THREE.MeshPhysicalMaterial({         // 珠光（薄膜干涉）
+      color: 0xfff4ec, metalness: 0, roughness: 0.22,
+      iridescence: 0.9, iridescenceIOR: 1.32,
+      clearcoat: 0.9, clearcoatRoughness: 0.25, envMapIntensity: 1.0
+    }),
+    gem: new THREE.MeshPhysicalMaterial({           // 折射透射
+      color: 0xffffff, metalness: 0, roughness: 0.05,
+      transmission: 0.95, thickness: 6, ior: 1.76,
+      attenuationDistance: 18, envMapIntensity: 1.4
+    }),
+    diamond: new THREE.MeshPhysicalMaterial({       // 火彩色散
+      color: 0xffffff, metalness: 0, roughness: 0.02,
+      transmission: 1.0, thickness: 3, ior: 2.35,
+      dispersion: 0.09, envMapIntensity: 1.8
+    })
+  };
+}
+
+/* —— 几何工厂：尺寸即碰撞半径 —— */
+function makeGeometries() {
+  return {
+    coin: new THREE.CylinderGeometry(2.4, 2.4, 0.55, 40),
+    pearl: new THREE.SphereGeometry(1.7, 32, 32),
+    gem: new THREE.IcosahedronGeometry(2.1, 0),
+    diamond: (() => {                               // 简化钻石切工：八面体截顶
+      const g = new THREE.OctahedronGeometry(1.9, 0);
+      const pos = g.attributes.position;
+      for (let i=0;i<pos.count;i++){
+        let y = pos.getY(i);
+        if (y > 0.9) y = 0.9;                       // 台面
+        pos.setY(i, y * (y > 0 ? 0.62 : 1.35));     // 冠部扁、亭部尖
+      }
+      g.computeVertexNormals(); return g;
+    })()
+  };
+}
+
+const TYPES = [
+  { key:'coin',    count: 220, radius: 2.4, tint: null },
+  { key:'pearl',   count:  80, radius: 1.7,
+    tint: () => new THREE.Color().setHSL(0.08+Math.random()*0.06, 0.25, 0.93) },
+  { key:'gem',     count:  56, radius: 2.1,
+    tint: () => [new THREE.Color(0xd40f4e), new THREE.Color(0x0aa050),
+                 new THREE.Color(0x1e46d8), new THREE.Color(0x8a1fbf)]
+                [Math.floor(Math.random()*4)].clone().offsetHSL(0, 0, (Math.random()-0.5)*0.1) },
+  { key:'diamond', count:  24, radius: 1.7, tint: null }
+];
+
+const fields = [];
+const matLib = makeMaterials(), geoLib = makeGeometries();
+const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _dq = new THREE.Quaternion(),
+      _s = new THREE.Vector3(), _axis = new THREE.Vector3(), _col = new THREE.Color();
+
+class TreasureField {
+  constructor(cfg) {
+    this.cfg = cfg;
+    const n = cfg.count;
+    this.pos = []; this.vel = []; this.quat = [];
+    this.age = new Float32Array(n).map(() => Math.random()*-2);  // 负值=出生延迟
+    this.tumbleAxis = []; this.tumbleSpeed = new Float32Array(n);
+    this.mesh = new THREE.InstancedMesh(geoLib[cfg.key], matLib[cfg.key], n);
+    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    for (let i=0;i<n;i++){
+      this.pos.push(new THREE.Vector3(0,-999,0));
+      this.vel.push(new THREE.Vector3());
+      this.quat.push(new THREE.Quaternion().random());
+      this.tumbleAxis.push(new THREE.Vector3().randomDirection());
+      this.tumbleSpeed[i] = 0.04 + Math.random()*0.08;
+      if (cfg.tint) this.mesh.setColorAt(i, cfg.tint());
+    }
+    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+    scene.add(this.mesh);
+  }
+  spawn(i) {
+    const a = Math.random()*Math.PI*2, rr = Math.pow(Math.random(),0.6)*9;   // 顶部一束
+    this.pos[i].set(SPAWNER.x + Math.cos(a)*rr, SPAWNER.y + Math.random()*50, SPAWNER.z + Math.sin(a)*rr);
+    this.vel[i].set((Math.random()-0.5)*0.2, -(1+Math.random()*1.5), (Math.random()-0.5)*0.2);
+    this.age[i] = 0;
+  }
+  update(dt) {
+    const { radius } = this.cfg;
+    for (let i=0;i<this.cfg.count;i++){
+      if (this.age[i] < 0) { this.age[i] += dt; continue; }
+      if (this.pos[i].y < -100 || this.age[i] === 0 && this.pos[i].y < -900) this.spawn(i);
+      const p = this.pos[i], v = this.vel[i];
+      this.age[i] += dt;
+      v.y = Math.max(-MAX_FALL, v.y - GRAV);
+      const n = solveGoblet(p, v, radius);
+      p.add(v);
+      // 姿态：贴壁滚动（绕 v×n）/ 空中翻滚
+      if (n) {
+        _axis.crossVectors(v, n).normalize();
+        _dq.setFromAxisAngle(_axis, v.length() * 0.14);
+      } else {
+        _dq.setFromAxisAngle(this.tumbleAxis[i], this.tumbleSpeed[i] + v.length()*0.02);
+      }
+      this.quat[i].premultiply(_dq);
+      // 生命周期缩放：出生淡入 + 消亡消融（防瞬移穿帮）
+      let sc = Math.min(1, this.age[i]*2.2);
+      if (p.y < -40) sc *= Math.max(0, 1 + (p.y+40)/45);
+      _s.setScalar(sc);
+      _m.compose(p, this.quat[i], _s);
+      this.mesh.setMatrixAt(i, _m);
+    }
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+}
+TYPES.forEach(t => fields.push(new TreasureField(t)));
+
+/* ============================================================
+ * 4. 金粉光尘层（沿用 additive Points，与原项目双色金沙同构）
+ * ============================================================ */
+const DUST_N = 900;
+const dustPos = new Float32Array(DUST_N*3), dustVel = new Float32Array(DUST_N*3);
+const dustPhase = new Float32Array(DUST_N), dustSpeed = new Float32Array(DUST_N);
+const dustCol = new Float32Array(DUST_N*3);
+for (let i=0;i<DUST_N;i++){
+  const a = Math.random()*Math.PI*2, rr = Math.pow(Math.random(),0.5)*40;
+  dustPos[i*3] = Math.cos(a)*rr;
+  dustPos[i*3+1] = Math.random()*260 - 30;
+  dustPos[i*3+2] = Math.sin(a)*rr;
+  dustVel[i*3+1] = -(1.2+Math.random()*2.2);
+  dustPhase[i] = Math.random()*Math.PI*2;
+  dustSpeed[i] = 4+Math.random()*7;
+}
+const dustGeom = new THREE.BufferGeometry();
+dustGeom.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+dustGeom.setAttribute('color', new THREE.BufferAttribute(dustCol, 3));
+const dust = new THREE.Points(dustGeom, new THREE.PointsMaterial({
+  size: 2.1, vertexColors: true, transparent: true, opacity: 0.9,
+  blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true
+}));
+scene.add(dust);
+const _dp = new THREE.Vector3(), _dv = new THREE.Vector3();
+
+function updateDust(t) {
+  for (let i=0;i<DUST_N;i++){
+    _dp.set(dustPos[i*3], dustPos[i*3+1], dustPos[i*3+2]);
+    _dv.set(dustVel[i*3], dustVel[i*3+1], dustVel[i*3+2]);
+    _dv.y = Math.max(-4.5, _dv.y - GRAV);
+    if (solveGoblet(_dp, _dv, 0)) { dustVel[i*3]=_dv.x; dustVel[i*3+1]=_dv.y; dustVel[i*3+2]=_dv.z; }
+    _dp.add(_dv);
+    if (_dp.y < -60) {
+      const a = Math.random()*Math.PI*2, rr = Math.pow(Math.random(),0.5)*40;
+      _dp.set(Math.cos(a)*rr, 210+Math.random()*50, Math.sin(a)*rr);
+      _dv.set(0, -(1.2+Math.random()*2.2), 0);
+    }
+    dustPos[i*3]=_dp.x; dustPos[i*3+1]=_dp.y; dustPos[i*3+2]=_dp.z;
+    dustVel[i*3]=_dv.x; dustVel[i*3+1]=_dv.y; dustVel[i*3+2]=_dv.z;
+    const tw = 0.55 + 0.45*Math.sin(t*dustSpeed[i]+dustPhase[i]);   // 闪烁
+    dustCol[i*3]=1.0*tw; dustCol[i*3+1]=0.78*tw; dustCol[i*3+2]=0.32*tw;
+  }
+  dustGeom.attributes.position.needsUpdate = true;
+  dustGeom.attributes.color.needsUpdate = true;
+}
+
+/* ============================================================
+ * 5. 顶部圣光光束（假体积光）
+ * ============================================================ */
+const beam = new THREE.Mesh(
+  new THREE.CylinderGeometry(4, 34, 180, 32, 1, true),
+  new THREE.MeshBasicMaterial({ color: 0xfff3cf, transparent: true, opacity: 0.05,
+    blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })
+);
+beam.position.set(SPAWNER.x, SPAWNER.y-60, SPAWNER.z);
+scene.add(beam);
+
+/* HUD 统计 */
+document.getElementById('counts').textContent =
+  `宝物实例 ${TYPES.reduce((s,t)=>s+t.count,0)} · 金粉 ${DUST_N} · draw call ≈ ${TYPES.length + 4}`;
+
+/* ============================================================
+ * 6. 主循环
+ * ============================================================ */
+const clock = new THREE.Clock();
+let t = 0;
+function loop() {
+  requestAnimationFrame(loop);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  t += dt;
+  fields.forEach(f => f.update(dt));
+  updateDust(t);
+  beam.material.opacity = 0.04 + 0.018*Math.sin(t*1.7);
+  controls.update();
+  renderer.render(scene, camera);
+}
+loop();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>

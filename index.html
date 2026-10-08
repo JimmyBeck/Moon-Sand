@@ -468,6 +468,14 @@
 
           <div class="control-item">
             <div class="control-label">
+              <span>🪙 金币尺寸 (大小缩放)</span>
+              <span id="gold-coin-scale-val">100%</span>
+            </div>
+            <input id="gold-coin-scale-slider" type="range" min="60" max="180" step="5" value="100">
+          </div>
+
+          <div class="control-item">
+            <div class="control-label">
               <span>🪙 金币比重</span>
               <span id="ratio-coin-val">50%</span>
             </div>
@@ -495,7 +503,10 @@
         <div class="panel-card">
           <div class="control-label">
             <span style="font-weight:600; color:var(--accent-gold);">👑 3D 导流阻挡物</span>
-            <button id="gold-glass-toggle-btn" class="action-btn active" style="font-size:11px; padding:2px 8px;">已启用</button>
+            <div style="display:flex; gap:6px;">
+              <button id="gold-obs-mesh-toggle-btn" class="action-btn active" style="font-size:11px; padding:2px 8px;">实体轮廓: 显示</button>
+              <button id="gold-glass-toggle-btn" class="action-btn active" style="font-size:11px; padding:2px 8px;">已启用</button>
+            </div>
           </div>
 
           <div class="control-item">
@@ -503,7 +514,16 @@
             <div class="btn-group" id="gold-obs-type-group">
               <button id="gold-obs-glass" class="action-btn active" style="flex:1; padding:5px 0; font-size:11px;">高脚金樽</button>
               <button id="gold-obs-hand" class="action-btn" style="flex:1; padding:5px 0; font-size:11px;">捧金之手 🫴</button>
+              <button id="gold-obs-reaching" class="action-btn" style="flex:1; padding:5px 0; font-size:11px;">探云散掌 🌸</button>
             </div>
+          </div>
+
+          <div class="control-item">
+            <div class="control-label">
+              <span>物体尺寸 (大小缩放)</span>
+              <span id="gold-obs-scale-val">100%</span>
+            </div>
+            <input id="gold-obs-scale-slider" type="range" min="50" max="180" step="5" value="100">
           </div>
 
           <div class="control-item">
