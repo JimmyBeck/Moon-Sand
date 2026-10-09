@@ -277,6 +277,11 @@ function init() {
   // 核心统一物理系统
   goldFallSystem = new GoldFallSystem(scene);
   window.goldFallSystem = goldFallSystem;
+  window.camera = camera;
+  window.controls = controls;
+  window.scene = scene;
+  window.renderer = renderer;
+  window.THREE = THREE;
 
   // 读取 URL 参数
   const urlParams = new URLSearchParams(window.location.search);

@@ -1884,27 +1884,45 @@ export class GoldFallSystem {
     let bestHit = null;
     let maxPen = 0;
 
-    // 1. 掌心微凹承托浅盆 (Palm Basin: 仅覆盖掌心核心区 Z in [-19, 13.5], |X| <= 17.0)
-    if (lz >= -19 && lz <= 13.5 && Math.abs(lx) <= 17.0) {
+    // 1. 掌心微凹承托浅盆 (Palm Basin: 覆盖掌心核心区 Z in [-19, 15.0], |X| <= 17.5)
+    if (lz >= -19 && lz <= 15.0 && Math.abs(lx) <= 17.5) {
       const expY = 0.6 - (lx * lx) * 0.0035 + (lz * lz) * 0.0018;
       const surfaceY = expY + scaledR;
       if (ly <= surfaceY && ly >= surfaceY - 14.0 - scaledR) {
-        const pen = (surfaceY - ly) * this.obstacleScale;
+        let nx = (lx / 17.5) * 0.55;
+        let ny = 1.0;
+        let nz = (lz > 0 ? 0.20 : -0.22);
+        const nLen = Math.hypot(nx, ny, nz);
+        const normY = ny / nLen;
+        // 关键：推出深度换算为沿法向位移，确保在局部垂直轴上 100% 推出至 surfaceY 外层
+        const pen = ((surfaceY - ly) / normY + 0.25) * this.obstacleScale;
         if (pen > maxPen) {
           maxPen = pen;
-          let nx = (lx / 17.0) * 0.55;
-          let ny = 1.0;
-          let nz = (lz > 0 ? 0.20 : -0.22);
-          const nLen = Math.hypot(nx, ny, nz);
+
+          // 三路指缝寻流导流：避免沙子直撞中指根部，自然顺应流向三道指缝
+          // 缝隙 1 (食指-中指缝 X ≈ 5.4) | 缝隙 2 (中指-无名指缝 X ≈ -2.3) | 缝隙 3 (无名指-小指缝 X ≈ -9.8)
+          let gapDirX = 0;
+          if (lz > -4.0) {
+            if (lx >= 1.6) {
+              gapDirX = 0.48;  // 顺流滑向食指-中指缝及食指主跌水槽
+            } else if (lx >= -6.2) {
+              gapDirX = -0.48; // 顺流滑向中指-无名指缝
+            } else {
+              gapDirX = -0.52; // 顺流滑向无名指-小指缝
+            }
+          } else {
+            gapDirX = (lx / 17.5) * 0.40; // 掌心后半段保持柔和铺展
+          }
+
           bestHit = {
             pen: pen,
             nLocX: nx / nLen,
             nLocY: ny / nLen,
             nLocZ: nz / nLen,
             isLip: false,
-            scatX: lx / 17.0,
-            scatY: 0.15,
-            scatZ: 0.85
+            scatX: gapDirX,
+            scatY: -0.25,
+            scatZ: 0.88
           };
         }
       }
@@ -1965,13 +1983,22 @@ export class GoldFallSystem {
       const capR = f.r * (1.0 - t * 0.20); // 指尖柔化微缩
 
       if (dist < capR + scaledR) {
-        const pen = (capR + scaledR - dist) * this.obstacleScale;
+        const pen = (capR + scaledR - dist + 0.20) * this.obstacleScale;
         if (pen > maxPen) {
           maxPen = pen;
 
           let nx = dist > 1e-4 ? (lx - cx) / dist : 0;
           let ny = dist > 1e-4 ? (ly - cy) / dist : 1.0;
           let nz = dist > 1e-4 ? (lz - cz) / dist : 0;
+
+          // 核心机制：消除手指根部迎流面的反向对顶门槛 (Ridge Watershed)
+          // 将向后阻挡的法向消除，并在中指根部构建向左右指缝的分水岭
+          if (t < 0.22 && nz < 0.15) {
+            nz = 0.22;
+            if (k === 2) {
+              nx = (lx >= f.x0 ? 0.55 : -0.55);
+            }
+          }
 
           // 确保指背上表面具有向上托举法向
           if (ny < 0.25 && ly >= cy - capR * 0.3) ny = 0.65;
@@ -1980,10 +2007,14 @@ export class GoldFallSystem {
 
           const isLip = (t >= 0.82) || f.isWing;
 
-          // 切向发散方向：食指沿下坡滑槽倾泻，其余手指顺骨节向外翻滚
+          // 切向发散方向：食指沿下坡滑槽倾泻，中指根部顺向左右指缝分流，指尖顺畅跌落
           let sDirX = f.isChute ? 0.05 : (fdx / 30);
           let sDirY = f.isChute ? -0.42 : (fdy / 30);
           let sDirZ = f.isChute ? 0.95 : (fdz / 30);
+          if (k === 2 && t < 0.25) {
+            sDirX = (lx >= f.x0 ? 0.65 : -0.65);
+            sDirZ = 0.72;
+          }
           const sDirLen = Math.hypot(sDirX, sDirY, sDirZ);
 
           bestHit = {
@@ -2326,6 +2357,7 @@ export class GoldFallSystem {
     p.active = true;
     p.life = 0;
     p.maxLife = 3.8;
+    p.surfaceContactTime = 0;
   }
 
   emitParticle(x, y, z, vx, vy, vz, color, size = 3.8, maxLife = 2.0) {
@@ -2784,6 +2816,8 @@ export class GoldFallSystem {
       if (this.glassEnabled && p.y >= this.glassPosY - 240 * obsScale && p.y <= this.glassPosY + 190 * obsScale) {
         const hit = this._solveObstacleCollision(p, 2.0);
         if (hit) {
+          p.surfaceContactTime = (p.surfaceContactTime || 0) + dt;
+
           // 推出穿模深度：直接投影回表面
           p.x += hit.normWorldX * hit.pen;
           p.y += hit.normWorldY * hit.pen;
@@ -2814,7 +2848,46 @@ export class GoldFallSystem {
           p.vx = p.vx * 0.82 + (gtX * 0.90 + hit.scatX * (42 + surgeOut)) * dt;
           p.vy = p.vy * 0.82 + (gtY * 0.90 + hit.scatY * 42 + surgeY) * dt;
           p.vz = p.vz * 0.82 + (gtZ * 0.90 + hit.scatZ * (42 + surgeOut)) * dt;
+
+          // 核心质感与零穿模防线：维持 24~28 px/s 微观慢速流淌，防死锁断流且绝不暴冲
+          const tangSpeedSq = p.vx * p.vx + p.vy * p.vy + p.vz * p.vz;
+          const minSlipSpeed = 26.0 * Math.sqrt(this.fallSpeedFactor);
+          if (tangSpeedSq < minSlipSpeed * minSlipSpeed) {
+            const slipDeficit = Math.max(0.4, 1.0 - Math.sqrt(tangSpeedSq) / minSlipSpeed);
+            p.vx += hit.scatX * minSlipSpeed * slipDeficit * 5.0 * dt;
+            p.vy += hit.scatY * minSlipSpeed * slipDeficit * 5.0 * dt;
+            p.vz += hit.scatZ * minSlipSpeed * slipDeficit * 5.0 * dt;
+
+            // 严守零穿模铁律：向内部法向分量严格二次消除，确保 100% 贴附曲面外层
+            const remVn = p.vx * hit.normWorldX + p.vy * hit.normWorldY + p.vz * hit.normWorldZ;
+            if (remVn < 0) {
+              p.vx -= hit.normWorldX * remVn;
+              p.vy -= hit.normWorldY * remVn;
+              p.vz -= hit.normWorldZ * remVn;
+            }
+          }
+
+          // 停留超时溢流与绝对质量守恒兜底闭环 (Sponge Overflow Safeguard)
+          if (p.surfaceContactTime > 2.5) {
+            p.vx += hit.scatX * 55.0 * dt;
+            p.vy += hit.scatY * 55.0 * dt;
+            p.vz += hit.scatZ * 55.0 * dt;
+            const overVn = p.vx * hit.normWorldX + p.vy * hit.normWorldY + p.vz * hit.normWorldZ;
+            if (overVn < 0) {
+              p.vx -= hit.normWorldX * overVn;
+              p.vy -= hit.normWorldY * overVn;
+              p.vz -= hit.normWorldZ * overVn;
+            }
+          }
+          if (p.surfaceContactTime > 4.5 && p.isBase) {
+            this._respawnBaseParticle(p, false, 0);
+            p.surfaceContactTime = 0;
+          }
+        } else {
+          p.surfaceContactTime = 0;
         }
+      } else {
+        p.surfaceContactTime = 0;
       }
 
       // 写入头部闪烁高光点缓冲
