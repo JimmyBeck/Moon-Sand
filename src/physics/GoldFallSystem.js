@@ -7,6 +7,7 @@
  * 4. 时间控制系统：时间流速（Time Scale）+ 一键时间停止（Bullet Time Freeze）
  */
 import * as THREE from 'three';
+import { ArchArchitecture } from '../geometry/ArchArchitecture.js';
 
 // 零 GC 预分配力学计算矢量
 const _rollAxis = new THREE.Vector3();
@@ -51,8 +52,21 @@ export class GoldFallSystem {
     this.activeParticleCount = 4200;
     this.particles = [];
 
-    // 3D 碰撞阻挡物（支持高脚金樽、捧金之手 🫴、探云散掌 🌸）
-    this.obstacleType = 'glass';  // 'glass' | 'hand' | 'reaching'
+    // 发射源控制 (月亮 / 虚空 / 圣光)
+    this.emitterType = 'moon';   // 'moon' | 'sky' | 'beam'
+    this.moonColor = '#ffcb1e';
+    this.moonTime = 0;
+
+    // 物料开关与粒子双色混色系统
+    this.sandEnabled = true;
+    this.jewelsEnabled = true;
+    this.colorA = new THREE.Color(0xffcb1e); // 主色（金黄）
+    this.colorB = new THREE.Color(0xffffff); // 副色（星白）
+    this.ratioA = 0.70;                     // 70% 主色 : 30% 副色
+    this.theme = 'dark';                    // 'dark' | 'light'
+
+    // 3D 碰撞阻挡物（支持高脚金樽、捧金之手 🫴、探云散掌 🌸、阶梯拱券 🏛️、罗马长廊 🏛️、双曲沙漏 ⏳、独酌孤杯 🍷、自定义 OBJ 📦）
+    this.obstacleType = 'glass';  // 'glass' | 'hand' | 'reaching' | 'arches' | 'colonnade' | 'hourglass' | 'wineglass' | 'custom'
     this.obstacleScale = 1.0;     // 阻挡物等比缩放因子 (0.5x ~ 1.8x)
     this.obstacleMeshVisible = true; // 实体轮廓可视性开关（隐形时物理碰撞与切向导流仍 100% 运行）
     this.coinScaleFactor = 1.0;   // 金币尺寸缩放因子 (0.6x ~ 1.8x)
@@ -66,14 +80,21 @@ export class GoldFallSystem {
     this.group.add(this.reachingGroup);
 
     this.glassEnabled = true;
+    this.glassPosX = 0;
     this.glassPosY = -95;
     this.glassPitch = 0.42;       // 约 24 度前倾，构成顺畅自排水导流斜坡
+    this.glassYaw = 0;
     this.glassRoll = -0.04;
     this.glassCushion = 0.04;     // 柔性减震吸能系数（0.04 = 水/流沙质感，微弱缓冲着陆，杜绝刚性弹跳）
+    this.autoRotate = false;
+    this.rotSpeed = 0.007;
     this.dissolveY = -150;        // 允许倾泻出杯口后在下方消融
 
-    this.glassPos = new THREE.Vector3(0, this.glassPosY, 0);
-    this.glassEuler = new THREE.Euler(this.glassPitch, 0, this.glassRoll, 'YXZ');
+    this.customMesh = null;
+    this._raycaster = new THREE.Raycaster();
+
+    this.glassPos = new THREE.Vector3(this.glassPosX, this.glassPosY, 0);
+    this.glassEuler = new THREE.Euler(this.glassPitch, this.glassYaw, this.glassRoll, 'YXZ');
     this.glassQuat = new THREE.Quaternion().setFromEuler(this.glassEuler);
     this.glassInvQuat = this.glassQuat.clone().invert();
     this.glassRotMat = new THREE.Matrix3().setFromMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(this.glassQuat));
@@ -92,9 +113,11 @@ export class GoldFallSystem {
     this._initStudioEnvironment();
     this._initCoinTextures();
     this._initMaterials();
+    this._initMoon();
     this._initWineGlass();
     this._initPalmHand();
     this._initReachingHand();
+    this._initArchitecturalObstacles();
     this._initParticleSystem();
     this._initLighting();
     this._updateObstacleMeshVisibility();
@@ -738,6 +761,34 @@ export class GoldFallSystem {
   }
 
   /* ----------------------------------------------------
+   * 4.1 发射源月轮天体构建
+   * ---------------------------------------------------- */
+  _initMoon() {
+    this.moonGroup = new THREE.Group();
+    this.moonGroup.name = 'MoonEmitter';
+
+    const moonGeo = new THREE.CircleGeometry(42, 64);
+    this.moonMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(this.moonColor) });
+    this.moonMesh = new THREE.Mesh(moonGeo, this.moonMat);
+    this.moonMesh.position.set(0, 200, 0);
+    this.moonGroup.add(this.moonMesh);
+
+    const haloGeo = new THREE.CircleGeometry(48, 64);
+    this.haloMat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(this.moonColor),
+      transparent: true,
+      opacity: 0.22,
+      blending: THREE.AdditiveBlending
+    });
+    this.moonHalo = new THREE.Mesh(haloGeo, this.haloMat);
+    this.moonHalo.position.set(0, 200, -1);
+    this.moonGroup.add(this.moonHalo);
+
+    this.group.add(this.moonGroup);
+    this.moonGroup.visible = (this.emitterType === 'moon');
+  }
+
+  /* ----------------------------------------------------
    * 4.5 3D 高脚金樽/酒杯（Wine Glass Obstacle）构建
    * 采用高透黑曜石微晶体材质 + 24K 黄金嵌边装饰圈
    * 并预烘焙高精度内壁、外壁与杯唇截面碰撞几何
@@ -1219,28 +1270,55 @@ export class GoldFallSystem {
     this._updateGlassTransform();
   }
 
+  /* ----------------------------------------------------
+   * 4.5c 经典建筑几何体 (拱券 / 长廊 / 沙漏 / 独酌孤杯) 构建
+   * ---------------------------------------------------- */
+  _initArchitecturalObstacles() {
+    this.archesCfg = ArchArchitecture.getClassicArchesConfig();
+    this.colonnadeCfg = ArchArchitecture.getColonnadeConfig();
+    this.hourglassCfg = ArchArchitecture.getHourglassConfig();
+    this.wineglassCfg = ArchArchitecture.getWineGlassConfig();
+
+    const stoneMat = new THREE.MeshStandardMaterial({
+      color: 0x18181b,
+      roughness: 0.85,
+      metalness: 0.15,
+      envMapIntensity: 1.2
+    });
+
+    this.archesGroup = ArchArchitecture.buildMeshGroup(this.archesCfg, true, false);
+    this.colonnadeGroup = ArchArchitecture.buildMeshGroup(this.colonnadeCfg, true, false);
+    this.hourglassGroup = ArchArchitecture.buildMeshGroup(this.hourglassCfg, true, false);
+    this.classicGlassGroup = ArchArchitecture.buildMeshGroup(this.wineglassCfg, true, false);
+
+    [this.archesGroup, this.colonnadeGroup, this.hourglassGroup, this.classicGlassGroup].forEach(grp => {
+      grp.traverse(child => { if (child.isMesh) child.material = stoneMat; });
+      grp.visible = false;
+      this.group.add(grp);
+    });
+  }
+
   _updateGlassTransform() {
-    this.glassPos.set(0, this.glassPosY, 0);
-    this.glassEuler.set(this.glassPitch, 0, this.glassRoll, 'YXZ');
+    this.glassPos.set(this.glassPosX, this.glassPosY, 0);
+    this.glassEuler.set(this.glassPitch, this.glassYaw, this.glassRoll, 'YXZ');
     this.glassQuat.setFromEuler(this.glassEuler);
     this.glassInvQuat.copy(this.glassQuat).invert();
     this.glassRotMat.setFromMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(this.glassQuat));
 
-    if (this.glassGroup) {
-      this.glassGroup.position.copy(this.glassPos);
-      this.glassGroup.rotation.copy(this.glassEuler);
-      this.glassGroup.scale.setScalar(this.obstacleScale);
-    }
-    if (this.handGroup) {
-      this.handGroup.position.copy(this.glassPos);
-      this.handGroup.rotation.copy(this.glassEuler);
-      this.handGroup.scale.setScalar(this.obstacleScale);
-    }
-    if (this.reachingGroup) {
-      this.reachingGroup.position.copy(this.glassPos);
-      this.reachingGroup.rotation.copy(this.glassEuler);
-      this.reachingGroup.scale.setScalar(this.obstacleScale);
-    }
+    const s = this.obstacleScale || 1.0;
+    const allGroups = [
+      this.glassGroup, this.handGroup, this.reachingGroup,
+      this.archesGroup, this.colonnadeGroup, this.hourglassGroup, this.classicGlassGroup
+    ];
+    if (this.customMesh) allGroups.push(this.customMesh);
+
+    allGroups.forEach(g => {
+      if (g) {
+        g.position.copy(this.glassPos);
+        g.quaternion.copy(this.glassQuat);
+        g.scale.set(s, s, s);
+      }
+    });
   }
 
   /* ----------------------------------------------------
@@ -1248,13 +1326,420 @@ export class GoldFallSystem {
    * ---------------------------------------------------- */
   _solveObstacleCollision(worldPos, radius) {
     if (!this.glassEnabled) return null;
-    if (this.obstacleType === 'reaching') {
+    if (this.obstacleType === 'arches') {
+      return this._solveArchesCollision(worldPos, radius, this.archesCfg.arches);
+    } else if (this.obstacleType === 'colonnade') {
+      return this._solveArchesCollision(worldPos, radius, this.colonnadeCfg.arches);
+    } else if (this.obstacleType === 'hourglass') {
+      return this._solveHourglassCollision(worldPos, radius, this.hourglassCfg);
+    } else if (this.obstacleType === 'wineglass') {
+      return this._solveClassicGlassCollision(worldPos, radius, this.wineglassCfg);
+    } else if (this.obstacleType === 'custom' && this.customMesh) {
+      return this._solveMeshCollision(worldPos, radius);
+    } else if (this.obstacleType === 'reaching') {
       return this._solveReachingHandCollision(worldPos, radius);
     } else if (this.obstacleType === 'hand') {
       return this._solveHandCollision(worldPos, radius);
     } else {
       return this._solveGlassCollision(worldPos, radius);
     }
+  }
+
+  _solveArchesCollision(worldPos, radius, archesData) {
+    const qx = this.glassInvQuat.x, qy = this.glassInvQuat.y, qz = this.glassInvQuat.z, qw = this.glassInvQuat.w;
+    const lpX = worldPos.x - this.glassPos.x;
+    const lpY = worldPos.y - this.glassPos.y;
+    const lpZ = worldPos.z - this.glassPos.z;
+
+    const ix =  qw * lpX + qy * lpZ - qz * lpY;
+    const iy =  qw * lpY + qz * lpX - qx * lpZ;
+    const iz =  qw * lpZ + qx * lpY - qy * lpX;
+    const iw = -qx * lpX - qy * lpY - qz * lpZ;
+
+    const invS = 1.0 / (this.obstacleScale || 1.0);
+    const lx = (ix * qw + iw * -qx + iy * -qz - iz * -qy) * invS;
+    const ly = (iy * qw + iw * -qy + iz * -qx - ix * -qz) * invS;
+    const lz = (iz * qw + iw * -qz + ix * -qy - iy * -qx) * invS;
+    const scaledR = radius * invS;
+
+    let bestHit = null;
+    let maxPen = 0;
+
+    for (let i = 0; i < archesData.length; i++) {
+      const arch = archesData[i];
+      const rx = lx - arch.cx;
+      const ry = ly - arch.cy;
+      const rz = lz - arch.cz;
+
+      if (Math.abs(rz) > arch.depth * 0.5 + scaledR + 4.0) continue;
+
+      if (ry >= -8.0 - scaledR) {
+        const dist2D = Math.hypot(rx, ry);
+        const targetR = arch.outerR + scaledR;
+
+        // 只要落入拱门上半圆弧顶区域，100% 承托在外弧面，绝不穿透进拱洞
+        if (dist2D <= targetR) {
+          const pen = (targetR - dist2D) * this.obstacleScale;
+          if (pen > maxPen) {
+            maxPen = pen;
+            let nx = dist2D > 1e-4 ? rx / dist2D : 0;
+            let ny = dist2D > 1e-4 ? Math.max(0.04, ry / dist2D) : 1.0;
+            const nLen = Math.hypot(nx, ny);
+            nx /= nLen; ny /= nLen;
+
+            const shedDir = rx >= 0 ? 1 : -1;
+            bestHit = {
+              pen: pen,
+              nLocX: nx,
+              nLocY: ny,
+              nLocZ: 0,
+              isLip: Math.abs(rx) > arch.outerR * 0.75,
+              scatX: nx * 0.85 + shedDir * 0.35,
+              scatY: -0.2,
+              scatZ: shedDir * 0.4
+            };
+          }
+        }
+      }
+    }
+
+    if (bestHit) {
+      return this._transformHitResult(bestHit, ly, Math.hypot(lx, lz));
+    }
+    return null;
+  }
+
+  _solveHourglassCollision(worldPos, radius, cfg) {
+    const qx = this.glassInvQuat.x, qy = this.glassInvQuat.y, qz = this.glassInvQuat.z, qw = this.glassInvQuat.w;
+    const lpX = worldPos.x - this.glassPos.x;
+    const lpY = worldPos.y - this.glassPos.y;
+    const lpZ = worldPos.z - this.glassPos.z;
+
+    const ix =  qw * lpX + qy * lpZ - qz * lpY;
+    const iy =  qw * lpY + qz * lpX - qx * lpZ;
+    const iz =  qw * lpZ + qx * lpY - qy * lpX;
+    const iw = -qx * lpX - qy * lpY - qz * lpZ;
+
+    const invS = 1.0 / (this.obstacleScale || 1.0);
+    const lx = (ix * qw + iw * -qx + iy * -qz - iz * -qy) * invS;
+    const ly = (iy * qw + iw * -qy + iz * -qx - ix * -qz) * invS;
+    const lz = (iz * qw + iw * -qz + ix * -qy - iy * -qx) * invS;
+    const scaledR = radius * invS;
+    const r = Math.hypot(lx, lz);
+
+    if (ly <= cfg.topY + scaledR && ly >= cfg.bottomY - scaledR) {
+      const midT = Math.abs(ly - cfg.neckY) / (cfg.topY - cfg.neckY);
+      const expectedR = THREE.MathUtils.lerp(cfg.neckR, cfg.topR, Math.pow(midT, 0.75));
+      const targetR = expectedR + scaledR;
+
+      if (r <= targetR) {
+        const pen = (targetR - r) * this.obstacleScale;
+        const nrX = lx / (r || 1);
+        const nrZ = lz / (r || 1);
+        const ny = (ly > cfg.neckY ? 0.6 : -0.3);
+        const bestHit = {
+          pen: pen,
+          nLocX: nrX * 0.8,
+          nLocY: ny,
+          nLocZ: nrZ * 0.8,
+          isLip: Math.abs(ly - cfg.neckY) < 10,
+          scatX: nrX,
+          scatY: -0.4,
+          scatZ: nrZ
+        };
+        return this._transformHitResult(bestHit, ly, r);
+      }
+    }
+    return null;
+  }
+
+  _solveClassicGlassCollision(worldPos, radius, cfg) {
+    const qx = this.glassInvQuat.x, qy = this.glassInvQuat.y, qz = this.glassInvQuat.z, qw = this.glassInvQuat.w;
+    const lpX = worldPos.x - this.glassPos.x;
+    const lpY = worldPos.y - this.glassPos.y;
+    const lpZ = worldPos.z - this.glassPos.z;
+
+    const ix =  qw * lpX + qy * lpZ - qz * lpY;
+    const iy =  qw * lpY + qz * lpX - qx * lpZ;
+    const iz =  qw * lpZ + qx * lpY - qy * lpX;
+    const iw = -qx * lpX - qy * lpY - qz * lpZ;
+
+    const invS = 1.0 / (this.obstacleScale || 1.0);
+    const lx = (ix * qw + iw * -qx + iy * -qz - iz * -qy) * invS;
+    const ly = (iy * qw + iw * -qy + iz * -qx - ix * -qz) * invS;
+    const lz = (iz * qw + iw * -qz + ix * -qy - iy * -qx) * invS;
+    const scaledR = radius * invS;
+    const r = Math.hypot(lx, lz);
+
+    if (ly >= cfg.bowlBottomY - scaledR && ly <= cfg.bowlTopY + scaledR + 5) {
+      const t = Math.max(0, Math.min(1, (ly - cfg.bowlBottomY) / (cfg.bowlTopY - cfg.bowlBottomY)));
+      const expectedR = THREE.MathUtils.lerp(cfg.bowlWaistR, cfg.bowlTopR, Math.pow(t, 0.8));
+      const targetR = expectedR + scaledR;
+
+      if (r <= targetR) {
+        const pen = (targetR - r) * this.obstacleScale;
+        const nrX = lx / (r || 1);
+        const nrZ = lz / (r || 1);
+        const slopeY = THREE.MathUtils.clamp((cfg.bowlTopR - cfg.bowlWaistR) / (cfg.bowlTopY - cfg.bowlBottomY), 0.2, 0.8);
+        const bestHit = {
+          pen: pen,
+          nLocX: nrX,
+          nLocY: slopeY,
+          nLocZ: nrZ,
+          isLip: ly >= cfg.bowlTopY - 6,
+          scatX: nrX,
+          scatY: 0.1,
+          scatZ: nrZ
+        };
+        return this._transformHitResult(bestHit, ly, r);
+      }
+    }
+    return null;
+  }
+
+  _bakeMeshHeightfield(mesh) {
+    if (!mesh) {
+      this.meshHeightfield = null;
+      return;
+    }
+
+    const box = new THREE.Box3();
+    mesh.traverse(child => {
+      if (child.isMesh && child.geometry) {
+        if (!child.geometry.boundingBox) child.geometry.computeBoundingBox();
+        box.union(child.geometry.boundingBox);
+      }
+    });
+
+    if (box.isEmpty()) {
+      box.set(new THREE.Vector3(-100, -100, -100), new THREE.Vector3(100, 100, 100));
+    }
+
+    const minX = box.min.x - 3.0;
+    const maxX = box.max.x + 3.0;
+    const minZ = box.min.z - 3.0;
+    const maxZ = box.max.z + 3.0;
+    const minY = box.min.y;
+    const maxY = box.max.y;
+
+    const sizeX = maxX - minX;
+    const sizeZ = maxZ - minZ;
+    const sizeY = maxY - minY;
+
+    const res = 64;
+    const stepX = sizeX / (res - 1);
+    const stepZ = sizeZ / (res - 1);
+
+    const heights = new Float32Array(res * res).fill(-99999);
+    const normals = new Float32Array(res * res * 3);
+
+    const originY = maxY + 15.0;
+    const rayDir = new THREE.Vector3(0, -1, 0);
+    const raycaster = new THREE.Raycaster();
+    raycaster.far = sizeY + 30.0;
+
+    const origPos = mesh.position.clone();
+    const origQuat = mesh.quaternion.clone();
+    const origScale = mesh.scale.clone();
+    mesh.position.set(0, 0, 0);
+    mesh.quaternion.identity();
+    mesh.scale.set(1, 1, 1);
+    mesh.updateMatrixWorld(true);
+
+    const rayOrigin = new THREE.Vector3();
+    for (let iz = 0; iz < res; iz++) {
+      const lz = minZ + iz * stepZ;
+      for (let ix = 0; ix < res; ix++) {
+        const lx = minX + ix * stepX;
+        rayOrigin.set(lx, originY, lz);
+        raycaster.set(rayOrigin, rayDir);
+
+        const hits = raycaster.intersectObject(mesh, true);
+        const idx = iz * res + ix;
+        const idx3 = idx * 3;
+
+        if (hits.length > 0) {
+          const hit = hits[0];
+          heights[idx] = hit.point.y;
+          const fn = hit.face ? hit.face.normal : new THREE.Vector3(0, 1, 0);
+          normals[idx3]     = fn.x;
+          normals[idx3 + 1] = fn.y;
+          normals[idx3 + 2] = fn.z;
+        } else {
+          heights[idx] = -99999;
+          normals[idx3]     = 0;
+          normals[idx3 + 1] = 1;
+          normals[idx3 + 2] = 0;
+        }
+      }
+    }
+
+    mesh.position.copy(origPos);
+    mesh.quaternion.copy(origQuat);
+    mesh.scale.copy(origScale);
+    mesh.updateMatrixWorld(true);
+
+    // 缝隙修补
+    for (let iz = 1; iz < res - 1; iz++) {
+      for (let ix = 1; ix < res - 1; ix++) {
+        const idx = iz * res + ix;
+        if (heights[idx] <= -99990) {
+          let sumH = 0, countH = 0;
+          const neighbors = [
+            (iz - 1) * res + ix,
+            (iz + 1) * res + ix,
+            iz * res + (ix - 1),
+            iz * res + (ix + 1)
+          ];
+          for (const nIdx of neighbors) {
+            if (heights[nIdx] > -99990) {
+              sumH += heights[nIdx];
+              countH++;
+            }
+          }
+          if (countH >= 3) {
+            heights[idx] = sumH / countH;
+            normals[idx * 3 + 1] = 1.0;
+          }
+        }
+      }
+    }
+
+    this.meshHeightfield = {
+      minX, maxX, minZ, maxZ, minY, maxY,
+      sizeX, sizeZ,
+      res, stepX, stepZ,
+      heights, normals
+    };
+  }
+
+  _solveMeshCollision(worldPos, radius) {
+    if (!this.customMesh || !this.meshHeightfield) return null;
+    const hf = this.meshHeightfield;
+
+    const qx = this.glassInvQuat.x, qy = this.glassInvQuat.y, qz = this.glassInvQuat.z, qw = this.glassInvQuat.w;
+    const lpX = worldPos.x - this.glassPos.x;
+    const lpY = worldPos.y - this.glassPos.y;
+    const lpZ = worldPos.z - this.glassPos.z;
+
+    const ix =  qw * lpX + qy * lpZ - qz * lpY;
+    const iy =  qw * lpY + qz * lpX - qx * lpZ;
+    const iz =  qw * lpZ + qx * lpY - qy * lpX;
+    const iw = -qx * lpX - qy * lpY - qz * lpZ;
+
+    const invS = 1.0 / (this.obstacleScale || 1.0);
+    const lx = (ix * qw + iw * -qx + iy * -qz - iz * -qy) * invS;
+    const ly = (iy * qw + iw * -qy + iz * -qx - ix * -qz) * invS;
+    const lz = (iz * qw + iw * -qz + ix * -qy - iy * -qx) * invS;
+    const scaledR = radius * invS;
+
+    if (lx < hf.minX - scaledR || lx > hf.maxX + scaledR ||
+        lz < hf.minZ - scaledR || lz > hf.maxZ + scaledR ||
+        ly < hf.minY - scaledR || ly > hf.maxY + scaledR + 30.0) {
+      return null;
+    }
+
+    const u = (lx - hf.minX) / hf.stepX;
+    const v = (lz - hf.minZ) / hf.stepZ;
+    if (u < 0 || u > hf.res - 1 || v < 0 || v > hf.res - 1) return null;
+
+    const u0 = Math.floor(u);
+    const v0 = Math.floor(v);
+    const u1 = Math.min(hf.res - 1, u0 + 1);
+    const v1 = Math.min(hf.res - 1, v0 + 1);
+    const fu = u - u0;
+    const fv = v - v0;
+
+    const res = hf.res;
+    const h00 = hf.heights[v0 * res + u0];
+    const h10 = hf.heights[v0 * res + u1];
+    const h01 = hf.heights[v1 * res + u0];
+    const h11 = hf.heights[v1 * res + u1];
+
+    if (h00 <= -99990 && h10 <= -99990 && h01 <= -99990 && h11 <= -99990) return null;
+
+    let validH00 = h00 > -99990 ? h00 : (h10 > -99990 ? h10 : (h01 > -99990 ? h01 : h11));
+    let validH10 = h10 > -99990 ? h10 : validH00;
+    let validH01 = h01 > -99990 ? h01 : validH00;
+    let validH11 = h11 > -99990 ? h11 : validH10;
+
+    const surfY = (1 - fu) * (1 - fv) * validH00 +
+                  fu * (1 - fv) * validH10 +
+                  (1 - fu) * fv * validH01 +
+                  fu * fv * validH11;
+
+    const targetY = surfY + scaledR;
+    if (ly <= targetY && ly >= surfY - 80.0) {
+      const pen = (targetY - ly) * (this.obstacleScale || 1.0);
+
+      const idx00 = (v0 * res + u0) * 3;
+      const idx10 = (v0 * res + u1) * 3;
+      const idx01 = (v1 * res + u0) * 3;
+      const idx11 = (v1 * res + u1) * 3;
+
+      let locNx = (1 - fu) * (1 - fv) * hf.normals[idx00]     + fu * (1 - fv) * hf.normals[idx10]     + (1 - fu) * fv * hf.normals[idx01]     + fu * fv * hf.normals[idx11];
+      let locNy = (1 - fu) * (1 - fv) * hf.normals[idx00 + 1] + fu * (1 - fv) * hf.normals[idx10 + 1] + (1 - fu) * fv * hf.normals[idx01 + 1] + fu * fv * hf.normals[idx11 + 1];
+      let locNz = (1 - fu) * (1 - fv) * hf.normals[idx00 + 2] + fu * (1 - fv) * hf.normals[idx10 + 2] + (1 - fu) * fv * hf.normals[idx01 + 2] + fu * fv * hf.normals[idx11 + 2];
+
+      const locLen = Math.hypot(locNx, locNy, locNz);
+      if (locLen > 1e-4) {
+        locNx /= locLen;
+        locNy /= locLen;
+        locNz /= locLen;
+      } else {
+        locNx = 0; locNy = 1; locNz = 0;
+      }
+      if (locNy < 0.2) locNy = 0.2;
+
+      const bestHit = {
+        pen: pen,
+        nLocX: locNx,
+        nLocY: locNy,
+        nLocZ: locNz,
+        isLip: false,
+        scatX: locNx * 0.85,
+        scatY: -0.25,
+        scatZ: locNz * 0.85
+      };
+
+      return this._transformHitResult(bestHit, ly, Math.hypot(lx, lz));
+    }
+    return null;
+  }
+
+  _transformHitResult(bestHit, ly, r) {
+    const m = this.glassRotMat.elements;
+    const nx = bestHit.nLocX, ny = bestHit.nLocY, nz = bestHit.nLocZ;
+    let nwx = m[0] * nx + m[3] * ny + m[6] * nz;
+    let nwy = m[1] * nx + m[4] * ny + m[7] * nz;
+    let nwz = m[2] * nx + m[5] * ny + m[8] * nz;
+    const nwLen = Math.hypot(nwx, nwy, nwz);
+    if (nwLen > 1e-4) { nwx /= nwLen; nwy /= nwLen; nwz /= nwLen; }
+
+    const sx0 = bestHit.scatX, sy0 = bestHit.scatY, sz0 = bestHit.scatZ;
+    const rx = m[0] * sx0 + m[3] * sy0 + m[6] * sz0;
+    const ry = m[1] * sx0 + m[4] * sy0 + m[7] * sz0;
+    const rz = m[2] * sx0 + m[5] * sy0 + m[8] * sz0;
+
+    const dotRN = rx * nwx + ry * nwy + rz * nwz;
+    let sx = rx - dotRN * nwx, sy = ry - dotRN * nwy, sz = rz - dotRN * nwz;
+    const sLen = Math.hypot(sx, sy, sz);
+    if (sLen > 1e-4) { sx /= sLen; sy /= sLen; sz /= sLen; }
+
+    const res = this._hitResult;
+    res.pen = bestHit.pen;
+    res.normWorldX = nwx;
+    res.normWorldY = nwy;
+    res.normWorldZ = nwz;
+    res.scatX = sx;
+    res.scatY = sy;
+    res.scatZ = sz;
+    res.isInner = false;
+    res.isLip = bestHit.isLip;
+    res.isOuter = true;
+    res.ly = ly;
+    res.r = r;
+    return res;
   }
 
   _solveHandCollision(worldPos, radius) {
@@ -1321,7 +1806,7 @@ export class GoldFallSystem {
     }
 
     const surfaceY = expectedY + scaledR;
-    if (ly > surfaceY || ly < surfaceY - 26 - scaledR) return null;
+    if (ly > surfaceY || ly < surfaceY - 60 - scaledR) return null;
 
     const pen = (surfaceY - ly) * this.obstacleScale;
     const nLen = Math.hypot(nLocX, nLocY, nLocZ);
@@ -1591,13 +2076,13 @@ export class GoldFallSystem {
     let bestHit = null;
 
     // 1. 实心穹顶与杯唇导流表面 (Solid Deflector Crown & Lip Crest)
-    // 覆盖整个杯顶区域 (r <= 43.5 + scaledR)，消除内凹陷阱，全部赋予外向导流梯度
-    if (r <= 43.5 + scaledR && ly >= 35.0) {
+    // 覆盖整个杯顶与杯腹上部 (r <= 43.5 + scaledR, ly >= 15.0)，消除内凹陷阱，全部赋予外向导流梯度
+    if (r <= 43.5 + scaledR && ly >= 15.0) {
       const normR = Math.min(1.0, r / 41.25);
       const expectedY = 51.5 + 1.3 * (1.0 - normR * normR);
       const topSurfaceY = expectedY + scaledR;
 
-      if (ly <= topSurfaceY && ly >= 40.0 - scaledR) {
+      if (ly <= topSurfaceY) {
         const pen = (topSurfaceY - ly) * this.obstacleScale;
         const isLip = r >= 34.0;
 
@@ -1632,7 +2117,7 @@ export class GoldFallSystem {
         const cy = seg.ay + t * seg.dy;
 
         const sDist = (r - cx) * seg.nx + (ly - cy) * seg.ny;
-        if (sDist < scaledR && sDist > -scaledR * 1.8) {
+        if (sDist < scaledR && sDist > -38.0) {
           const penLocal = scaledR - sDist;
           if (penLocal > maxPen) {
             maxPen = penLocal;
@@ -1654,9 +2139,11 @@ export class GoldFallSystem {
     if (bestHit) {
       const m = this.glassRotMat.elements;
       const nx = bestHit.nLocX, ny = bestHit.nLocY, nz = bestHit.nLocZ;
-      const nwx = m[0] * nx + m[3] * ny + m[6] * nz;
-      const nwy = m[1] * nx + m[4] * ny + m[7] * nz;
-      const nwz = m[2] * nx + m[5] * ny + m[8] * nz;
+      let nwx = m[0] * nx + m[3] * ny + m[6] * nz;
+      let nwy = m[1] * nx + m[4] * ny + m[7] * nz;
+      let nwz = m[2] * nx + m[5] * ny + m[8] * nz;
+      const nwLen = Math.hypot(nwx, nwy, nwz);
+      if (nwLen > 1e-4) { nwx /= nwLen; nwy /= nwLen; nwz /= nwLen; }
 
       // 从中心对称轴向外的水平径向矢量（世界空间）
       const rx = m[0] * urx + m[6] * urz;
@@ -1698,17 +2185,27 @@ export class GoldFallSystem {
   }
 
   /* ----------------------------------------------------
-   * 5. 纯金沙色阶生成器
+   * 5. 粒子混色与自适应黑白主题生成器
    * ---------------------------------------------------- */
   _getGoldSandColor() {
-    const r = Math.random();
-    if (r < 0.70) {
-      return { r: 1.0, g: 0.82, b: 0.22 };
-    } else if (r < 0.88) {
-      return { r: 1.0, g: 0.90, b: 0.45 };
+    const isA = Math.random() < this.ratioA;
+    const baseC = isA ? this.colorA : this.colorB;
+    let cr = baseC.r;
+    let cg = baseC.g;
+    let cb = baseC.b;
+
+    if (this.theme === 'light') {
+      const lum = 0.299 * cr + 0.587 * cg + 0.114 * cb;
+      if (lum > 0.85) {
+        cr = 0.25; cg = 0.30; cb = 0.38;
+      }
     } else {
-      return { r: 1.0, g: 0.98, b: 0.85 };
+      const jitter = (Math.random() - 0.5) * 0.08;
+      cr = Math.max(0, Math.min(1, cr + jitter));
+      cg = Math.max(0, Math.min(1, cg + jitter));
+      cb = Math.max(0, Math.min(1, cb + jitter));
     }
+    return { r: cr, g: cg, b: cb };
   }
 
   /* ----------------------------------------------------
@@ -1793,25 +2290,36 @@ export class GoldFallSystem {
     }
   }
 
-  _respawnBaseParticle(p, spreadVertical = false) {
-    const halfW = this.streamWidth * 0.52;
-    const r = Math.sqrt(Math.random()) * halfW;
-    const theta = Math.random() * Math.PI * 2;
-    p.x = Math.cos(theta) * r;
-    p.y = 225 + (Math.random() - 0.5) * 15;
-    p.z = Math.sin(theta) * (r * 0.45);
+  _respawnBaseParticle(p, spreadVertical = false, dtExcess = 0) {
+    if (this.emitterType === 'moon') {
+      const halfW = Math.min(40, this.streamWidth * 0.45);
+      const spawnX = (Math.random() - 0.5) * (halfW * 2);
+      const dy = Math.sqrt(Math.max(0, 42 * 42 - spawnX * spawnX));
+      p.x = spawnX;
+      p.y = 200 - dy + (Math.random() - 0.5) * 4;
+      p.z = (Math.random() - 0.5) * 10;
+    } else {
+      const halfW = this.streamWidth * 0.52;
+      const r = Math.sqrt(Math.random()) * halfW;
+      const theta = Math.random() * Math.PI * 2;
+      p.x = Math.cos(theta) * r;
+      p.y = 225 + (Math.random() - 0.5) * 15;
+      p.z = Math.sin(theta) * (r * 0.45);
+    }
+
+    p.vx = (Math.random() - 0.5) * 2;
+    p.vy = -(120 + Math.random() * 100) * this.fallSpeedFactor;
+    p.vz = (Math.random() - 0.5) * 2;
 
     if (spreadVertical) {
       p.y -= Math.random() * 660; // 启动瞬间全垂直高度均匀铺满瀑布
+    } else if (dtExcess > 0) {
+      p.y += p.vy * dtExcess; // 子帧泊松回顶补偿：平滑垂直密度分布
     }
 
     p.prevX = p.x;
-    p.prevY = p.y + 3.5;
+    p.prevY = p.y - p.vy * 0.016;
     p.prevZ = p.z;
-
-    p.vx = (Math.random() - 0.5) * 2;
-    p.vy = -(110 + Math.random() * 110) * this.fallSpeedFactor;
-    p.vz = (Math.random() - 0.5) * 2;
 
     const col = this._getGoldSandColor();
     p.r = col.r; p.g = col.g; p.b = col.b;
@@ -1917,12 +2425,21 @@ export class GoldFallSystem {
     mesh.scale.setScalar(baseScale);
 
     // 宏观实体横向落点受流沙整体宽度联动控制
-    const halfW = this.streamWidth * 0.5;
-    const r = Math.sqrt(Math.random()) * halfW;
-    const theta = Math.random() * Math.PI * 2;
-    const spawnX = Math.cos(theta) * r;
-    const spawnZ = Math.sin(theta) * (r * 0.42);
-    const spawnY = 240 + Math.random() * 20;
+    let spawnX, spawnY, spawnZ;
+    if (this.emitterType === 'moon') {
+      const halfW = Math.min(40, this.streamWidth * 0.45);
+      spawnX = (Math.random() - 0.5) * (halfW * 2);
+      const dy = Math.sqrt(Math.max(0, 42 * 42 - spawnX * spawnX));
+      spawnY = 200 - dy - 2;
+      spawnZ = (Math.random() - 0.5) * 8;
+    } else {
+      const halfW = this.streamWidth * 0.5;
+      const r = Math.sqrt(Math.random()) * halfW;
+      const theta = Math.random() * Math.PI * 2;
+      spawnX = Math.cos(theta) * r;
+      spawnZ = Math.sin(theta) * (r * 0.42);
+      spawnY = 240 + Math.random() * 20;
+    }
 
     mesh.position.set(spawnX, spawnY, spawnZ);
     mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
@@ -1961,7 +2478,7 @@ export class GoldFallSystem {
       drag,
       baseScale,
       vx: (Math.random() - 0.5) * 4,
-      vy: -(45 + Math.random() * 35) * this.fallSpeedFactor,
+      vy: -(120 + Math.random() * 50) * this.fallSpeedFactor,
       vz: (Math.random() - 0.5) * 3,
       rotSpeed,
       scale: 1.0,
@@ -1981,6 +2498,19 @@ export class GoldFallSystem {
     const dt = rawDt * this.timeScale;
     if (dt <= 0) return;
 
+    // 自转动效
+    if (this.autoRotate) {
+      this.glassYaw += this.rotSpeed * dt * 45;
+      this._updateGlassTransform();
+    }
+
+    // 月晕呼吸动效
+    if (this.moonHalo && this.moonGroup && this.moonGroup.visible) {
+      this.moonTime = (this.moonTime || 0) + dt;
+      const s = 1.0 + Math.sin(this.moonTime * 2.0) * 0.04;
+      this.moonHalo.scale.set(s, s, 1);
+    }
+
     // 假体积圣光呼吸动效
     if (this.beamMat) {
       this.beamTime = (this.beamTime || 0) + dt;
@@ -1988,10 +2518,12 @@ export class GoldFallSystem {
     }
 
     // 1. 定期注生宏观实体
-    this.spawnTimer += dt;
-    if (this.spawnTimer >= 1 / this.spawnRate) {
-      this.spawnTimer = 0;
-      this.spawnEntity();
+    if (this.jewelsEnabled) {
+      this.spawnTimer += dt;
+      if (this.spawnTimer >= 1 / this.spawnRate) {
+        this.spawnTimer = 0;
+        this.spawnEntity();
+      }
     }
 
     // 2. 更新所有下落实体（大件金币、宝石、珍珠）
@@ -2132,37 +2664,32 @@ export class GoldFallSystem {
         e.mesh.rotation.z += e.rotSpeed.z * dt;
       }
 
-      // 伴生金沙尾迹（彻底外移至实体上方气流尾流区，杜绝穿模）
-      const trailCount = e.type === 'coin' ? 3 : 2;
-      for (let t = 0; t < trailCount; t++) {
+      // 伴生金沙尾迹（节流降频 + 速度协同，彻底消除半空滞留大沙团）
+      e.trailTick = (e.trailTick || 0) + 1;
+      if (e.trailTick % 4 === 0) {
         let tx, ty, tz;
-        let pvy;
-
         if (e.type === 'coin') {
-          // 金币半径 15.2 * baseScale，尾流发射点严格置于金币上方 16.5 ~ 22.5 处
-          ty = curPos.y + (16.5 + Math.random() * 6) * e.baseScale;
-          tx = curPos.x + (Math.random() - 0.5) * 8 * e.baseScale;
-          tz = curPos.z + (Math.random() - 0.5) * 8 * e.baseScale;
-          // 初速度相对疾速下坠的金币呈现向上被气流甩脱的拖尾感
-          pvy = e.vy * 0.12 - (5 + Math.random() * 12);
+          ty = curPos.y + (16.5 + Math.random() * 5) * e.baseScale;
+          tx = curPos.x + (Math.random() - 0.5) * 6 * e.baseScale;
+          tz = curPos.z + (Math.random() - 0.5) * 6 * e.baseScale;
         } else {
-          // 宝石与珍珠上方尾流区
           const objH = e.type === 'pearl' ? 7 : 11;
-          ty = curPos.y + objH + Math.random() * 5;
-          tx = curPos.x + (Math.random() - 0.5) * 5;
-          tz = curPos.z + (Math.random() - 0.5) * 5;
-          pvy = e.vy * 0.15 - (6 + Math.random() * 14);
+          ty = curPos.y + objH + Math.random() * 4;
+          tx = curPos.x + (Math.random() - 0.5) * 4;
+          tz = curPos.z + (Math.random() - 0.5) * 4;
         }
 
+        // 垂直初速度跟随主瀑布下坠，绝不在空中悬浮滞留成团
+        const pvy = e.vy * 0.75 - (35 + Math.random() * 35);
         const sandCol = this._getGoldSandColor();
         this.emitParticle(
           tx, ty, tz,
-          e.vx * 0.15 + (Math.random() - 0.5) * 4,
+          e.vx * 0.25 + (Math.random() - 0.5) * 3,
           pvy,
-          e.vz * 0.15 + (Math.random() - 0.5) * 4,
+          e.vz * 0.25 + (Math.random() - 0.5) * 3,
           sandCol,
-          3.0 + Math.random() * 1.8,
-          1.5
+          2.6 + Math.random() * 1.4,
+          0.6 // 寿命缩短至 0.6 秒，迅速自然融入瀑布淡出
         );
       }
 
@@ -2177,20 +2704,20 @@ export class GoldFallSystem {
         e.scale = factor;
         e.mesh.scale.setScalar(factor * e.baseScale);
 
-        const burstCount = 6;
-        const burstSpread = (1 - factor) * (this.streamWidth * 0.16 + 5);
+        const burstCount = 1;
+        const burstSpread = (1 - factor) * (this.streamWidth * 0.12 + 4);
         for (let b = 0; b < burstCount; b++) {
           const sandCol = this._getGoldSandColor();
           this.emitParticle(
             curPos.x + (Math.random() - 0.5) * burstSpread,
             curPos.y + (Math.random() - 0.5) * burstSpread,
             curPos.z + (Math.random() - 0.5) * burstSpread,
-            e.vx * 0.4 + (Math.random() - 0.5) * 15,
-            e.vy * 0.85 - (25 + Math.random() * 35),
-            e.vz * 0.4 + (Math.random() - 0.5) * 15,
+            e.vx * 0.3 + (Math.random() - 0.5) * 10,
+            -Math.abs(e.vy * 0.6) - (20 + Math.random() * 25), // 严格向下定向迸发
+            e.vz * 0.3 + (Math.random() - 0.5) * 10,
             sandCol,
-            3.6 + Math.random() * 2.8,
-            2.2
+            3.2 + Math.random() * 2.0,
+            1.2
           );
         }
 
@@ -2221,11 +2748,15 @@ export class GoldFallSystem {
 
       p.life += dt;
 
-      // 寿命与下边界检测：常驻流沙循环复活，消融迸发粒子消亡回收
-      if (p.life >= p.maxLife || p.y <= this.bottomY) {
-        if (p.isBase) {
-          this._respawnBaseParticle(p, false);
-        } else {
+      // 寿命与下边界检测：常驻流沙严禁超时早死，仅当穿过下边界时平稳回顶循环
+      if (p.isBase) {
+        if (p.y <= this.bottomY) {
+          const overshoot = Math.max(0, this.bottomY - p.y);
+          const dtExcess = Math.min(0.04, overshoot / Math.max(10, Math.abs(p.vy)));
+          this._respawnBaseParticle(p, false, dtExcess);
+        }
+      } else {
+        if (p.life >= p.maxLife || p.y <= this.bottomY) {
           p.active = false;
           continue;
         }
@@ -2236,18 +2767,35 @@ export class GoldFallSystem {
       p.prevY = p.y;
       p.prevZ = p.z;
 
-      // 重力加速度积分
+      // 1. 重力加速度积分与终端速度限制 (消除速度无限发散与稀疏)
       p.vy -= (this.gravity * 0.85) * dt;
+      const maxFallSpeed = 280 * this.fallSpeedFactor;
+      if (p.vy < -maxFallSpeed) p.vy = -maxFallSpeed;
 
-      // 3D 阻挡物曲面切向导流与杯唇掀浪碰撞
+      // 2. 预测位移步进与空气阻尼
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.z += p.vz * dt;
+      p.vx *= 0.985;
+      p.vz *= 0.985;
+
+      // 3. 3D 阻挡物自适应碰撞检测与投影约束
       const obsScale = this.obstacleScale || 1.0;
-      if (this.glassEnabled && p.y >= this.glassPosY - 115 * obsScale && p.y <= this.glassPosY + 75 * obsScale) {
-        const hit = this._solveObstacleCollision(p, 1.8);
+      if (this.glassEnabled && p.y >= this.glassPosY - 240 * obsScale && p.y <= this.glassPosY + 190 * obsScale) {
+        const hit = this._solveObstacleCollision(p, 2.0);
         if (hit) {
-          // 推出穿模深度
+          // 推出穿模深度：直接投影回表面
           p.x += hit.normWorldX * hit.pen;
           p.y += hit.normWorldY * hit.pen;
           p.z += hit.normWorldZ * hit.pen;
+
+          // 核心：严格消除向内部的法向速度分量，杜绝后续帧再次陷入物体
+          const vn = p.vx * hit.normWorldX + p.vy * hit.normWorldY + p.vz * hit.normWorldZ;
+          if (vn < 0) {
+            p.vx -= hit.normWorldX * vn;
+            p.vy -= hit.normWorldY * vn;
+            p.vz -= hit.normWorldZ * vn;
+          }
 
           // 曲面切向重力驱动
           const dotGN = -(this.gravity * 0.85) * hit.normWorldY;
@@ -2255,26 +2803,19 @@ export class GoldFallSystem {
           const gtY = -(this.gravity * 0.85) - dotGN * hit.normWorldY;
           const gtZ = -dotGN * hit.normWorldZ;
 
-          // 边缘与指尖掀起水幕涌浪（还原标志性涌起与外翻水幕散开）
+          // 边缘与指尖掀起水幕涌浪
           let surgeY = 0;
           let surgeOut = 0;
           if (hit.isLip || (this.obstacleType === 'glass' && hit.ly >= 36 * obsScale && hit.ly <= 53 * obsScale)) {
-            surgeY = 52 * Math.sqrt(this.fallSpeedFactor);
-            surgeOut = 75 * Math.sqrt(this.fallSpeedFactor) * Math.sqrt(obsScale);
+            surgeY = 32 * Math.sqrt(this.fallSpeedFactor);
+            surgeOut = 50 * Math.sqrt(this.fallSpeedFactor) * Math.sqrt(obsScale);
           }
 
-          p.vx = p.vx * 0.86 + (gtX * 0.85 + hit.scatX * (36 + surgeOut)) * dt;
-          p.vy = p.vy * 0.86 + (gtY * 0.85 + hit.scatY * 36 + surgeY) * dt;
-          p.vz = p.vz * 0.86 + (gtZ * 0.85 + hit.scatZ * (36 + surgeOut)) * dt;
+          p.vx = p.vx * 0.82 + (gtX * 0.90 + hit.scatX * (42 + surgeOut)) * dt;
+          p.vy = p.vy * 0.82 + (gtY * 0.90 + hit.scatY * 42 + surgeY) * dt;
+          p.vz = p.vz * 0.82 + (gtZ * 0.90 + hit.scatZ * (42 + surgeOut)) * dt;
         }
       }
-
-      // 位移积分与速度阻尼
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.z += p.vz * dt;
-      p.vx *= 0.985;
-      p.vz *= 0.985;
 
       // 写入头部闪烁高光点缓冲
       const ptIdx = activeCount * 3;
@@ -2320,6 +2861,10 @@ export class GoldFallSystem {
       activeCount++;
     }
 
+    if (!this.sandEnabled) {
+      activeCount = 0;
+    }
+
     this.activeParticleCount = activeCount;
     this.lineGeom.setDrawRange(0, activeCount * 2);
     this.ptGeom.setDrawRange(0, activeCount);
@@ -2356,11 +2901,74 @@ export class GoldFallSystem {
     this.ratios.gem = Math.max(0, gem);
   }
 
+  setEmitterType(type) {
+    this.emitterType = (type === 'sky' || type === 'beam') ? type : 'moon';
+    if (this.moonGroup) {
+      this.moonGroup.visible = (this.emitterType === 'moon');
+    }
+  }
+
+  setMoonColor(hex) {
+    this.moonColor = hex;
+    const col = new THREE.Color(hex);
+    if (this.moonMesh) this.moonMesh.material.color.copy(col);
+    if (this.moonHalo) this.moonHalo.material.color.copy(col);
+  }
+
+  setSandEnabled(enabled) {
+    this.sandEnabled = !!enabled;
+    if (!this.sandEnabled) {
+      this.activeParticleCount = 0;
+      this.lineGeom.setDrawRange(0, 0);
+      this.ptGeom.setDrawRange(0, 0);
+    }
+  }
+
+  setJewelsEnabled(enabled) {
+    this.jewelsEnabled = !!enabled;
+    if (!this.jewelsEnabled) {
+      for (const e of this.entities) {
+        this.group.remove(e.mesh);
+      }
+      this.entities = [];
+    }
+  }
+
+  setDualColors(hexA, hexB, ratio = 0.70) {
+    this.colorA.set(hexA);
+    this.colorB.set(hexB);
+    this.ratioA = ratio;
+  }
+
+  setTheme(theme) {
+    this.theme = theme;
+    const isLight = (theme === 'light');
+    if (this.lineMat) {
+      this.lineMat.blending = isLight ? THREE.NormalBlending : THREE.AdditiveBlending;
+      this.lineMat.opacity = isLight ? 0.88 : 0.95;
+    }
+    if (this.ptMat) {
+      this.ptMat.blending = isLight ? THREE.NormalBlending : THREE.AdditiveBlending;
+      this.ptMat.opacity = isLight ? 0.95 : 0.95;
+    }
+  }
+
+  setParticleCount(count) {
+    const c = Math.max(1000, Math.min(this.totalParticles, count));
+    this.baseStreamCount = c;
+    this.activeParticleCount = c;
+  }
+
   _updateObstacleMeshVisibility() {
     const show = this.glassEnabled && this.obstacleMeshVisible;
     if (this.glassGroup) this.glassGroup.visible = show && (this.obstacleType === 'glass');
     if (this.handGroup) this.handGroup.visible = show && (this.obstacleType === 'hand');
     if (this.reachingGroup) this.reachingGroup.visible = show && (this.obstacleType === 'reaching');
+    if (this.archesGroup) this.archesGroup.visible = show && (this.obstacleType === 'arches');
+    if (this.colonnadeGroup) this.colonnadeGroup.visible = show && (this.obstacleType === 'colonnade');
+    if (this.hourglassGroup) this.hourglassGroup.visible = show && (this.obstacleType === 'hourglass');
+    if (this.classicGlassGroup) this.classicGlassGroup.visible = show && (this.obstacleType === 'wineglass');
+    if (this.customMesh) this.customMesh.visible = show && (this.obstacleType === 'custom');
   }
 
   setObstacleMeshVisible(visible) {
@@ -2374,8 +2982,19 @@ export class GoldFallSystem {
     this.dissolveY = this.glassEnabled ? -150 : -80;
   }
 
+  setGravity(g) {
+    // 兼容 UI 滑块 0.04 ~ 0.30 映射到真实物理加速度 340 px/s²
+    if (g <= 2.0) {
+      this.baseGravity = 340 * (g / 0.12);
+    } else {
+      this.baseGravity = g;
+    }
+    this.gravity = this.baseGravity * (this.fallSpeedFactor || 1.0);
+  }
+
   setObstacleType(type) {
-    this.obstacleType = (type === 'hand' || type === 'reaching') ? type : 'glass';
+    if (type === 'classic') type = 'arches';
+    this.obstacleType = type;
     this._updateObstacleMeshVisibility();
     this._updateGlassTransform();
   }
@@ -2397,6 +3016,24 @@ export class GoldFallSystem {
     this._updateGlassTransform();
   }
 
+  setObstacleTransform(x, y, pitchDeg, yawDeg) {
+    if (x !== undefined) this.glassPosX = x;
+    if (y !== undefined) this.glassPosY = y;
+    if (pitchDeg !== undefined) this.glassPitch = pitchDeg * (Math.PI / 180);
+    if (yawDeg !== undefined) this.glassYaw = yawDeg * (Math.PI / 180);
+    this._updateGlassTransform();
+  }
+
+  setAutoRotate(enabled, speed) {
+    this.autoRotate = !!enabled;
+    if (speed !== undefined) this.rotSpeed = speed;
+  }
+
+  setGlassPosX(x) {
+    this.glassPosX = x;
+    this._updateGlassTransform();
+  }
+
   setGlassPosY(y) {
     this.glassPosY = y;
     this._updateGlassTransform();
@@ -2407,8 +3044,38 @@ export class GoldFallSystem {
     this._updateGlassTransform();
   }
 
+  setGlassYaw(yawDeg) {
+    this.glassYaw = yawDeg * (Math.PI / 180);
+    this._updateGlassTransform();
+  }
+
   setGlassCushion(cushion) {
     this.glassCushion = Math.max(0.0, Math.min(0.5, cushion));
+  }
+
+  setCustomMesh(mesh) {
+    if (this.customMesh) {
+      this.group.remove(this.customMesh);
+    }
+    this.customMesh = mesh;
+    if (this.customMesh) {
+      this._bakeMeshHeightfield(this.customMesh);
+      this.group.add(this.customMesh);
+    } else {
+      this.meshHeightfield = null;
+    }
+    this._updateGlassTransform();
+    this._updateObstacleMeshVisibility();
+  }
+
+  resetObstaclePose() {
+    this.glassPosX = 0;
+    this.glassPosY = -95;
+    this.glassPitch = 0.42;
+    this.glassYaw = 0;
+    this.glassRoll = -0.04;
+    this.obstacleScale = 1.0;
+    this._updateGlassTransform();
   }
 
   // 兼容旧接口

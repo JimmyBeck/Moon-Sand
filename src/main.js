@@ -1,47 +1,253 @@
 /**
- * 月亮流沙 (Moon Sand)
- * 类别: Processing 作品
+ * 月亮流沙V2：蒙尘之罪 统一引擎控制器
+ * 类别: Processing / Three.js 物理生成艺术
  * 作者: 崽崽
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
-import { ArchArchitecture } from './geometry/ArchArchitecture.js';
-import { ParticleSystem } from './physics/ParticleSystem.js';
 import { GoldFallSystem } from './physics/GoldFallSystem.js';
 
-// --- 全局状态 ---
-const state = {
-  moonColor: '#ffcb1e',
-  bgTheme: 'dark',        // 'dark' | 'light'
-  colorA: '#ffcb1e',       // 粒子主色（金色）
-  colorB: '#ffffff',       // 粒子副色（纯白）
-  ratioA: 0.70,           // 主色比例 70%
-  preset: 'goldfall',     // 'goldfall' | 'classic' | 'wineglass' | 'hourglass' | 'colonnade' | 'custom'
+// --- 全局场景对象 ---
+let container, renderer, scene, camera, controls;
+let goldFallSystem;
 
-  // 形状空间位置与姿态（相对月亮）
-  offset: { x: 0, y: 0, z: 0 },
-  tilt: { pitch: 0, yaw: 0, roll: 0 },
-  scale: 1.0,
-
-  rotSpeed: 0.007,
-  autoRotate: true,
-  gravity: 0.12,
-  maxFallSpeed: 4.5,
-  particleCount: 4200,
-  sparkleIntensity: 0.85,
-  showGeometry: false
+// --- 预设方案字典 (一键模版推荐) ---
+const PRESETS = {
+  goldfall: {
+    name: '👑 蒙尘之罪',
+    emitter: 'sky',
+    moonColor: '#ffcb1e',
+    streamWidth: 90,
+    spawnRate: 2.5,
+    sandEnabled: true,
+    colorA: '#ffcb1e',
+    colorB: '#ffffff',
+    ratioA: 0.70,
+    particleCount: 4200,
+    jewelsEnabled: true,
+    coinScale: 1.0,
+    coinRatio: 50,
+    pearlRatio: 30,
+    gemRatio: 20,
+    obstacleType: 'glass',
+    glassEnabled: true,
+    meshVisible: true,
+    obsScale: 1.0,
+    posX: 0,
+    posY: -95,
+    pitch: 24,
+    yaw: 0,
+    rotSpeed: 0.007,
+    autoRotate: false,
+    cushion: 0.04,
+    timeScale: 1.0,
+    fallSpeed: 1.0,
+    gravity: 0.12,
+    dissolveY: -80,
+    theme: 'dark'
+  },
+  moon_classic: {
+    name: '🏛️ 月下阶梯拱券',
+    emitter: 'moon',
+    moonColor: '#ffcb1e',
+    streamWidth: 90,
+    spawnRate: 2.5,
+    sandEnabled: true,
+    colorA: '#ffcb1e',
+    colorB: '#ffffff',
+    ratioA: 0.70,
+    particleCount: 4200,
+    jewelsEnabled: false,
+    coinScale: 1.0,
+    coinRatio: 50,
+    pearlRatio: 30,
+    gemRatio: 20,
+    obstacleType: 'classic',
+    glassEnabled: true,
+    meshVisible: false,
+    obsScale: 1.0,
+    posX: 0,
+    posY: 0,
+    pitch: 0,
+    yaw: 0,
+    rotSpeed: 0.007,
+    autoRotate: true,
+    cushion: 0.04,
+    timeScale: 1.0,
+    fallSpeed: 1.0,
+    gravity: 0.12,
+    dissolveY: -150,
+    theme: 'dark'
+  },
+  moon_hand: {
+    name: '🫴 月下捧金',
+    emitter: 'moon',
+    moonColor: '#ffcb1e',
+    streamWidth: 90,
+    spawnRate: 2.5,
+    sandEnabled: true,
+    colorA: '#ffcb1e',
+    colorB: '#ffffff',
+    ratioA: 0.70,
+    particleCount: 4200,
+    jewelsEnabled: true,
+    coinScale: 1.0,
+    coinRatio: 50,
+    pearlRatio: 30,
+    gemRatio: 20,
+    obstacleType: 'hand',
+    glassEnabled: true,
+    meshVisible: true,
+    obsScale: 1.0,
+    posX: 0,
+    posY: -95,
+    pitch: 24,
+    yaw: 0,
+    rotSpeed: 0.007,
+    autoRotate: false,
+    cushion: 0.04,
+    timeScale: 1.0,
+    fallSpeed: 1.0,
+    gravity: 0.12,
+    dissolveY: -150,
+    theme: 'dark'
+  },
+  sky_reaching: {
+    name: '🌸 探云落玉',
+    emitter: 'sky',
+    moonColor: '#ffcb1e',
+    streamWidth: 90,
+    spawnRate: 2.5,
+    sandEnabled: true,
+    colorA: '#ffcb1e',
+    colorB: '#ffffff',
+    ratioA: 0.70,
+    particleCount: 3800,
+    jewelsEnabled: true,
+    coinScale: 1.0,
+    coinRatio: 20,
+    pearlRatio: 50,
+    gemRatio: 30,
+    obstacleType: 'reaching',
+    glassEnabled: true,
+    meshVisible: true,
+    obsScale: 1.0,
+    posX: 0,
+    posY: -95,
+    pitch: 24,
+    yaw: 0,
+    rotSpeed: 0.007,
+    autoRotate: false,
+    cushion: 0.04,
+    timeScale: 1.0,
+    fallSpeed: 1.0,
+    gravity: 0.12,
+    dissolveY: -150,
+    theme: 'dark'
+  },
+  colonnade: {
+    name: '🏛️ 罗马长廊',
+    emitter: 'moon',
+    moonColor: '#ffcb1e',
+    streamWidth: 90,
+    spawnRate: 2.5,
+    sandEnabled: true,
+    colorA: '#ffcb1e',
+    colorB: '#ffffff',
+    ratioA: 0.70,
+    particleCount: 4200,
+    jewelsEnabled: false,
+    coinScale: 1.0,
+    coinRatio: 50,
+    pearlRatio: 30,
+    gemRatio: 20,
+    obstacleType: 'colonnade',
+    glassEnabled: true,
+    meshVisible: false,
+    obsScale: 1.0,
+    posX: 0,
+    posY: 0,
+    pitch: 0,
+    yaw: 0,
+    rotSpeed: 0.007,
+    autoRotate: true,
+    cushion: 0.04,
+    timeScale: 1.0,
+    fallSpeed: 1.0,
+    gravity: 0.12,
+    dissolveY: -150,
+    theme: 'dark'
+  },
+  hourglass: {
+    name: '⏳ 双曲沙漏',
+    emitter: 'moon',
+    moonColor: '#ffcb1e',
+    streamWidth: 90,
+    spawnRate: 2.5,
+    sandEnabled: true,
+    colorA: '#ffcb1e',
+    colorB: '#ffffff',
+    ratioA: 0.70,
+    particleCount: 4200,
+    jewelsEnabled: false,
+    coinScale: 1.0,
+    coinRatio: 50,
+    pearlRatio: 30,
+    gemRatio: 20,
+    obstacleType: 'hourglass',
+    glassEnabled: true,
+    meshVisible: false,
+    obsScale: 1.0,
+    posX: 0,
+    posY: 0,
+    pitch: 0,
+    yaw: 0,
+    rotSpeed: 0.007,
+    autoRotate: true,
+    cushion: 0.04,
+    timeScale: 1.0,
+    fallSpeed: 1.0,
+    gravity: 0.12,
+    dissolveY: -150,
+    theme: 'dark'
+  },
+  wineglass: {
+    name: '🍷 独酌孤杯',
+    emitter: 'moon',
+    moonColor: '#ffcb1e',
+    streamWidth: 90,
+    spawnRate: 2.5,
+    sandEnabled: true,
+    colorA: '#ffcb1e',
+    colorB: '#ffffff',
+    ratioA: 0.70,
+    particleCount: 4200,
+    jewelsEnabled: false,
+    coinScale: 1.0,
+    coinRatio: 50,
+    pearlRatio: 30,
+    gemRatio: 20,
+    obstacleType: 'wineglass',
+    glassEnabled: true,
+    meshVisible: false,
+    obsScale: 1.0,
+    posX: 0,
+    posY: 0,
+    pitch: 0,
+    yaw: 0,
+    rotSpeed: 0.007,
+    autoRotate: true,
+    cushion: 0.04,
+    timeScale: 1.0,
+    fallSpeed: 1.0,
+    gravity: 0.12,
+    dissolveY: -150,
+    theme: 'dark'
+  }
 };
 
-let container, renderer, scene, camera, controls;
-let moonMesh, moonHalo;
-let obstacleGroup;
-let currentConfig = ArchArchitecture.getClassicArchesConfig();
-let customMesh = null;
-let particleSystem;
-let goldFallSystem;
-let rotY = 0;
-const raycaster = new THREE.Raycaster();
+let currentPresetKey = 'goldfall';
 
 function init() {
   container = document.getElementById('canvas-container');
@@ -52,7 +258,7 @@ function init() {
   scene.background = new THREE.Color(0x000000);
 
   camera = new THREE.PerspectiveCamera(45, width / height, 1, 3000);
-  camera.position.set(0, -15, 620); // 推进视距至中近景，让金币与宝石细节清晰直观
+  camera.position.set(0, -15, 620);
 
   renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   renderer.setSize(width, height);
@@ -68,179 +274,39 @@ function init() {
   controls.maxDistance = 1500;
   controls.minDistance = 180;
 
-  const ambLight = new THREE.AmbientLight(0x444444);
-  scene.add(ambLight);
-  const dirLight = new THREE.DirectionalLight(0xffeedd, 0.8);
-  dirLight.position.set(120, 300, 200);
-  scene.add(dirLight);
-
-  // 支持 URL 参数快速配置预设 (e.g. ?theme=light&preset=wineglass&panel=open)
-  const urlParams = new URLSearchParams(window.location.search);
-  if (urlParams.get('theme') === 'light') {
-    state.bgTheme = 'light';
-    scene.background.set(0xffffff);
-    document.body.classList.add('theme-light');
-  }
-  if (urlParams.get('preset')) {
-    state.preset = urlParams.get('preset');
-  }
-  if (urlParams.get('moon')) {
-    state.moonColor = '#' + urlParams.get('moon').replace('#', '');
-  }
-  if (urlParams.get('colorA')) {
-    state.colorA = '#' + urlParams.get('colorA').replace('#', '');
-  }
-  if (urlParams.get('colorB')) {
-    state.colorB = '#' + urlParams.get('colorB').replace('#', '');
-  }
-  if (urlParams.get('showMesh') === 'true') {
-    state.showGeometry = true;
-  }
-  if (urlParams.get('rotate') === 'false') {
-    state.autoRotate = false;
-  }
-  if (urlParams.get('scale')) {
-    const s = parseFloat(urlParams.get('scale'));
-    if (!isNaN(s) && s >= 0.5 && s <= 1.5) {
-      state.scale = s;
-    }
-  }
-
-  // 1. 顶端月轮与月晕
-  const moonGeo = new THREE.CircleGeometry(42, 64);
-  const moonMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(state.moonColor) });
-  moonMesh = new THREE.Mesh(moonGeo, moonMat);
-  moonMesh.position.set(0, 200, 0);
-  scene.add(moonMesh);
-
-  const haloGeo = new THREE.CircleGeometry(48, 64);
-  const haloMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(state.moonColor),
-    transparent: true,
-    opacity: 0.22,
-    blending: THREE.AdditiveBlending
-  });
-  moonHalo = new THREE.Mesh(haloGeo, haloMat);
-  moonHalo.position.set(0, 200, -1);
-  scene.add(moonHalo);
-
-  // 2. 粒子系统与金沙下落系统
-  particleSystem = new ParticleSystem(6500);
-  particleSystem.activeCount = state.particleCount;
-  particleSystem.setDualColors(state.colorA, state.colorB, state.ratioA);
-  if (state.bgTheme === 'light') particleSystem.setTheme('light');
-  scene.add(particleSystem.group);
-
-  // 3. 蒙尘之罪·金币珍珠宝石流沙系统
+  // 核心统一物理系统
   goldFallSystem = new GoldFallSystem(scene);
   window.goldFallSystem = goldFallSystem;
 
-  // 4. 障碍物容器
-  obstacleGroup = new THREE.Group();
-  scene.add(obstacleGroup);
-  rebuildObstacle();
+  // 读取 URL 参数
+  const urlParams = new URLSearchParams(window.location.search);
+  const initialPreset = urlParams.get('preset') || 'goldfall';
 
-  // 监听画布尺寸变化（面板打开/收起、窗口缩放时无缝适配）
-  const resizeObserver = new ResizeObserver(() => {
-    onWindowResize();
-  });
-  resizeObserver.observe(container);
-
-  window.addEventListener('resize', onWindowResize);
+  // 绑定界面与预设
   setupUI();
   setupDragAndDrop();
 
+  // 应用初始预设
+  applyPreset(PRESETS[initialPreset] ? initialPreset : 'goldfall');
+
+  if (urlParams.get('theme') === 'light') {
+    setTheme('light');
+  }
   if (urlParams.get('panel') === 'open') {
     const p = document.getElementById('control-panel');
     if (p) p.classList.remove('collapsed');
   }
 
+  // 窗口与画布自适应
+  const resizeObserver = new ResizeObserver(() => onWindowResize());
+  resizeObserver.observe(container);
+  window.addEventListener('resize', onWindowResize);
+
   animate();
 }
 
-function updateMoonColor(hex) {
-  state.moonColor = hex;
-  const col = new THREE.Color(hex);
-  if (moonMesh) moonMesh.material.color.copy(col);
-  if (moonHalo) moonHalo.material.color.copy(col);
-}
-
-function setBgTheme(theme) {
-  state.bgTheme = theme;
-  const isLight = theme === 'light';
-  scene.background.set(isLight ? 0xffffff : 0x000000);
-  particleSystem.setTheme(theme);
-  document.body.classList.toggle('theme-light', isLight);
-  rebuildObstacle();
-}
-
-function rebuildObstacle() {
-  while (obstacleGroup.children.length > 0) {
-    const child = obstacleGroup.children[0];
-    obstacleGroup.remove(child);
-    if (child.geometry) child.geometry.dispose();
-  }
-
-  customMesh = null;
-  const isLight = state.bgTheme === 'light';
-
-  const isGoldFall = state.preset === 'goldfall';
-
-  // 面板各功能区块显隐联动（蒙尘之罪专属面板聚焦）
-  const secGoldFall = document.getElementById('goldfall-section');
-  const wrapMoonColor = document.getElementById('moon-color-wrap');
-  const secClassicParticle = document.getElementById('classic-particle-section');
-  const wrapClassicTransform = document.getElementById('classic-transform-wrap');
-  const wrapClassicDynamics = document.getElementById('classic-dynamics-wrap');
-
-  if (secGoldFall) secGoldFall.style.display = isGoldFall ? 'block' : 'none';
-  if (wrapMoonColor) wrapMoonColor.style.display = isGoldFall ? 'none' : 'block';
-  if (secClassicParticle) secClassicParticle.style.display = isGoldFall ? 'none' : 'block';
-  if (wrapClassicTransform) wrapClassicTransform.style.display = isGoldFall ? 'none' : 'block';
-  if (wrapClassicDynamics) wrapClassicDynamics.style.display = isGoldFall ? 'none' : 'block';
-
-  if (isGoldFall) {
-    if (goldFallSystem) {
-      goldFallSystem.enabled = true;
-      goldFallSystem.group.visible = true;
-    }
-    if (moonMesh) moonMesh.visible = false;
-    if (moonHalo) moonHalo.visible = false;
-    if (particleSystem) particleSystem.group.visible = false;
-    if (controls) {
-      controls.target.set(0, -60, 0);
-    }
-    return;
-  } else {
-    if (goldFallSystem) {
-      goldFallSystem.enabled = false;
-      goldFallSystem.group.visible = false;
-    }
-    if (moonMesh) moonMesh.visible = true;
-    if (moonHalo) moonHalo.visible = true;
-    if (particleSystem) particleSystem.group.visible = true;
-  }
-
-  if (state.preset === 'classic') {
-    currentConfig = ArchArchitecture.getClassicArchesConfig();
-    const mesh = ArchArchitecture.buildMeshGroup(currentConfig, state.showGeometry, isLight);
-    obstacleGroup.add(mesh);
-  } else if (state.preset === 'wineglass') {
-    currentConfig = ArchArchitecture.getWineGlassConfig();
-    const mesh = ArchArchitecture.buildMeshGroup(currentConfig, state.showGeometry, isLight);
-    obstacleGroup.add(mesh);
-  } else if (state.preset === 'hourglass') {
-    currentConfig = ArchArchitecture.getHourglassConfig();
-    const mesh = ArchArchitecture.buildMeshGroup(currentConfig, state.showGeometry, isLight);
-    obstacleGroup.add(mesh);
-  } else if (state.preset === 'colonnade') {
-    currentConfig = ArchArchitecture.getColonnadeConfig();
-    const mesh = ArchArchitecture.buildMeshGroup(currentConfig, state.showGeometry, isLight);
-    obstacleGroup.add(mesh);
-  }
-}
-
 function onWindowResize() {
+  if (!container) return;
   const width = container.clientWidth;
   const height = container.clientHeight;
   camera.aspect = width / height;
@@ -256,50 +322,214 @@ function animate() {
   const dt = Math.min((now - lastTime) / 1000, 0.05);
   lastTime = now;
 
-  // 自转更新
-  if (state.autoRotate) {
-    rotY += state.rotSpeed;
-  }
-
-  const currentYaw = (state.autoRotate ? rotY : 0) + state.tilt.yaw;
-  const rotAngles = new THREE.Vector3(state.tilt.pitch, currentYaw, state.tilt.roll);
-  const posOffset = new THREE.Vector3(state.offset.x, state.offset.y, state.offset.z);
-
-  // 同步三维实体位移、姿态与几何大小
-  obstacleGroup.position.copy(posOffset);
-  obstacleGroup.rotation.set(rotAngles.x, rotAngles.y, rotAngles.z, 'YXZ');
-  obstacleGroup.scale.setScalar(state.scale);
-
-  // 月晕轻微呼吸动效
-  if (moonHalo) {
-    const s = 1.0 + Math.sin(now * 0.002) * 0.04;
-    moonHalo.scale.set(s, s, 1);
-  }
-
-  // 粒子物理更新与渲染
-  if (goldFallSystem && goldFallSystem.enabled) {
+  if (goldFallSystem) {
     goldFallSystem.update(dt);
-  } else {
-    particleSystem.update(dt, currentConfig, customMesh, {
-      gravity: state.gravity,
-      maxFallSpeed: state.maxFallSpeed,
-      sparkleIntensity: state.sparkleIntensity,
-      posOffset: posOffset,
-      rotAngles: rotAngles,
-      scale: state.scale,
-      raycaster: raycaster
-    });
   }
 
   controls.update();
   renderer.render(scene, camera);
 }
 
-// --- 用户交互与界面绑定 ---
+// --- 预设方案一键应用与 UI 状态同步 ---
+function applyPreset(presetKey) {
+  const p = PRESETS[presetKey];
+  if (!p) return;
+  currentPresetKey = presetKey;
+
+  // 1. 同步引擎状态
+  goldFallSystem.setEmitterType(p.emitter);
+  goldFallSystem.setMoonColor(p.moonColor);
+  goldFallSystem.setStreamWidth(p.streamWidth);
+  goldFallSystem.spawnRate = p.spawnRate;
+
+  goldFallSystem.setSandEnabled(p.sandEnabled);
+  goldFallSystem.setDualColors(p.colorA, p.colorB, p.ratioA);
+  goldFallSystem.setParticleCount(p.particleCount);
+
+  goldFallSystem.setJewelsEnabled(p.jewelsEnabled);
+  goldFallSystem.setCoinScale(p.coinScale);
+  goldFallSystem.setRatios(p.coinRatio, p.pearlRatio, p.gemRatio);
+
+  goldFallSystem.setObstacleType(p.obstacleType);
+  goldFallSystem.setGlassEnabled(p.glassEnabled);
+  goldFallSystem.setObstacleMeshVisible(p.meshVisible);
+  goldFallSystem.setObstacleScale(p.obsScale);
+  goldFallSystem.setGlassPosX(p.posX);
+  goldFallSystem.setGlassPosY(p.posY);
+  goldFallSystem.setGlassPitch(p.pitch);
+  goldFallSystem.setGlassYaw(p.yaw);
+  goldFallSystem.setGlassCushion(p.cushion);
+  goldFallSystem.setAutoRotate(p.autoRotate, p.rotSpeed);
+
+  goldFallSystem.setTimeScale(p.timeScale);
+  goldFallSystem.setFallSpeedFactor(p.fallSpeed);
+  goldFallSystem.setGravity(p.gravity);
+  goldFallSystem.dissolveY = p.dissolveY;
+  setTheme(p.theme);
+
+  // 2. 同步全部 DOM 界面控件
+  syncUI(p, presetKey);
+}
+
+function syncUI(p, presetKey) {
+  // 卡片 1: 预设选择框
+  const presetSelect = document.getElementById('preset-select');
+  if (presetSelect) presetSelect.value = presetKey;
+
+  // 卡片 2: 发射源
+  const btnMoon = document.getElementById('btn-emitter-moon');
+  const btnSky = document.getElementById('btn-emitter-sky');
+  const moonColorWrap = document.getElementById('moon-color-wrap');
+  const moonColorPicker = document.getElementById('moon-color-picker');
+  const streamWidthSlider = document.getElementById('stream-width-slider');
+  const streamWidthVal = document.getElementById('stream-width-val');
+  const spawnRateSlider = document.getElementById('spawn-rate-slider');
+  const spawnRateVal = document.getElementById('spawn-rate-val');
+
+  if (btnMoon) btnMoon.classList.toggle('active', p.emitter === 'moon');
+  if (btnSky) btnSky.classList.toggle('active', p.emitter === 'sky');
+  if (moonColorWrap) moonColorWrap.style.display = (p.emitter === 'moon') ? 'flex' : 'none';
+  if (moonColorPicker) moonColorPicker.value = p.moonColor;
+  if (streamWidthSlider) streamWidthSlider.value = p.streamWidth;
+  if (streamWidthVal) streamWidthVal.innerText = `${p.streamWidth} px`;
+  if (spawnRateSlider) spawnRateSlider.value = p.spawnRate;
+  if (spawnRateVal) spawnRateVal.innerText = `${p.spawnRate.toFixed(1)} /s`;
+
+  // 卡片 3: 掉落物料
+  const sandBtn = document.getElementById('sand-toggle-btn');
+  const colorPickerA = document.getElementById('color-picker-a');
+  const colorPickerB = document.getElementById('color-picker-b');
+  const ratioSlider = document.getElementById('ratio-slider');
+  const ratioVal = document.getElementById('ratio-val');
+  const countSlider = document.getElementById('count-slider');
+  const countVal = document.getElementById('count-val');
+
+  if (sandBtn) {
+    sandBtn.classList.toggle('active', p.sandEnabled);
+    sandBtn.innerText = p.sandEnabled ? '已启用' : '已关闭';
+  }
+  if (colorPickerA) colorPickerA.value = p.colorA;
+  if (colorPickerB) colorPickerB.value = p.colorB;
+  if (ratioSlider) ratioSlider.value = p.ratioA;
+  if (ratioVal) ratioVal.innerText = `${Math.round(p.ratioA * 100)}% : ${Math.round((1 - p.ratioA) * 100)}%`;
+  if (countSlider) countSlider.value = p.particleCount;
+  if (countVal) countVal.innerText = p.particleCount;
+
+  const jewelsBtn = document.getElementById('jewels-toggle-btn');
+  const coinScaleSlider = document.getElementById('gold-coin-scale-slider');
+  const coinScaleVal = document.getElementById('gold-coin-scale-val');
+  const ratioCoin = document.getElementById('gold-ratio-coin');
+  const ratioPearl = document.getElementById('gold-ratio-pearl');
+  const ratioGem = document.getElementById('gold-ratio-gem');
+  const ratioCoinVal = document.getElementById('ratio-coin-val');
+  const ratioPearlVal = document.getElementById('ratio-pearl-val');
+  const ratioGemVal = document.getElementById('ratio-gem-val');
+  const ratioSummary = document.getElementById('gold-ratio-summary');
+
+  if (jewelsBtn) {
+    jewelsBtn.classList.toggle('active', p.jewelsEnabled);
+    jewelsBtn.innerText = p.jewelsEnabled ? '已启用' : '已关闭';
+  }
+  if (coinScaleSlider) coinScaleSlider.value = Math.round(p.coinScale * 100);
+  if (coinScaleVal) coinScaleVal.innerText = `${Math.round(p.coinScale * 100)}%`;
+  if (ratioCoin) ratioCoin.value = p.coinRatio;
+  if (ratioPearl) ratioPearl.value = p.pearlRatio;
+  if (ratioGem) ratioGem.value = p.gemRatio;
+
+  const total = p.coinRatio + p.pearlRatio + p.gemRatio;
+  const pctC = total > 0 ? Math.round((p.coinRatio / total) * 100) : 0;
+  const pctP = total > 0 ? Math.round((p.pearlRatio / total) * 100) : 0;
+  const pctG = 100 - pctC - pctP;
+  if (ratioCoinVal) ratioCoinVal.innerText = `${pctC}%`;
+  if (ratioPearlVal) ratioPearlVal.innerText = `${pctP}%`;
+  if (ratioGemVal) ratioGemVal.innerText = `${pctG}%`;
+  if (ratioSummary) ratioSummary.innerText = `${pctC}% : ${pctP}% : ${pctG}%`;
+
+  // 卡片 4: 承接物与空间姿态
+  const obsSelect = document.getElementById('obstacle-type-select');
+  const glassBtn = document.getElementById('glass-toggle-btn');
+  const obsMeshBtn = document.getElementById('obs-mesh-toggle-btn');
+  const obsScaleSlider = document.getElementById('obs-scale-slider');
+  const obsScaleVal = document.getElementById('obs-scale-val');
+  const posXSlider = document.getElementById('pos-x-slider');
+  const posXVal = document.getElementById('pos-x-val');
+  const posYSlider = document.getElementById('pos-y-slider');
+  const posYVal = document.getElementById('pos-y-val');
+  const tiltPitchSlider = document.getElementById('tilt-pitch-slider');
+  const tiltPitchVal = document.getElementById('tilt-pitch-val');
+  const facingYawSlider = document.getElementById('facing-yaw-slider');
+  const facingYawVal = document.getElementById('facing-yaw-val');
+  const speedSlider = document.getElementById('speed-slider');
+  const speedVal = document.getElementById('speed-val');
+  const cushionSlider = document.getElementById('glass-cushion-slider');
+  const cushionVal = document.getElementById('glass-cushion-val');
+  const toggleRotateBtn = document.getElementById('toggle-rotate');
+
+  if (obsSelect) obsSelect.value = p.obstacleType;
+  if (glassBtn) {
+    glassBtn.classList.toggle('active', p.glassEnabled);
+    glassBtn.innerText = p.glassEnabled ? '碰撞: 已启用' : '碰撞: 已关闭';
+  }
+  if (obsMeshBtn) {
+    obsMeshBtn.classList.toggle('active', p.meshVisible);
+    obsMeshBtn.innerText = p.meshVisible ? '实体轮廓: 显示' : '实体轮廓: 隐形';
+  }
+  if (obsScaleSlider) obsScaleSlider.value = Math.round(p.obsScale * 100);
+  if (obsScaleVal) obsScaleVal.innerText = `${Math.round(p.obsScale * 100)}%`;
+  if (posXSlider) posXSlider.value = p.posX;
+  if (posXVal) posXVal.innerText = p.posX;
+  if (posYSlider) posYSlider.value = p.posY;
+  if (posYVal) posYVal.innerText = p.posY;
+  if (tiltPitchSlider) tiltPitchSlider.value = p.pitch;
+  if (tiltPitchVal) tiltPitchVal.innerText = `${p.pitch}°`;
+  if (facingYawSlider) facingYawSlider.value = p.yaw;
+  if (facingYawVal) facingYawVal.innerText = `${p.yaw}°`;
+  if (speedSlider) speedSlider.value = p.rotSpeed;
+  if (speedVal) speedVal.innerText = p.rotSpeed.toFixed(3);
+  if (cushionSlider) cushionSlider.value = p.cushion;
+  if (cushionVal) cushionVal.innerText = p.cushion.toFixed(2);
+  if (toggleRotateBtn) {
+    toggleRotateBtn.classList.toggle('active', p.autoRotate);
+    toggleRotateBtn.innerText = p.autoRotate ? '自转: 运行中' : '自转: 已暂停';
+  }
+
+  // 卡片 5: 动力学
+  const timeScaleSlider = document.getElementById('timescale-slider');
+  const timeScaleVal = document.getElementById('timescale-val');
+  const fallSpeedSlider = document.getElementById('fallspeed-slider');
+  const fallSpeedVal = document.getElementById('fallspeed-val');
+  const gravitySlider = document.getElementById('gravity-slider');
+  const gravityVal = document.getElementById('gravity-val');
+  const dissolveSlider = document.getElementById('dissolve-slider');
+  const dissolveVal = document.getElementById('dissolve-val');
+
+  if (timeScaleSlider) timeScaleSlider.value = p.timeScale;
+  if (timeScaleVal) timeScaleVal.innerText = `${p.timeScale.toFixed(2)}x`;
+  if (fallSpeedSlider) fallSpeedSlider.value = p.fallSpeed;
+  if (fallSpeedVal) fallSpeedVal.innerText = `${p.fallSpeed.toFixed(1)}x`;
+  if (gravitySlider) gravitySlider.value = p.gravity;
+  if (gravityVal) gravityVal.innerText = p.gravity.toFixed(2);
+  if (dissolveSlider) dissolveSlider.value = p.dissolveY;
+  if (dissolveVal) dissolveVal.innerText = p.dissolveY;
+}
+
+function setTheme(theme) {
+  const isLight = (theme === 'light');
+  if (scene) scene.background.set(isLight ? 0xffffff : 0x000000);
+  document.body.classList.toggle('theme-light', isLight);
+  if (goldFallSystem) goldFallSystem.setTheme(theme);
+
+  const btnDark = document.getElementById('theme-dark');
+  const btnLight = document.getElementById('theme-light');
+  if (btnDark) btnDark.classList.toggle('active', !isLight);
+  if (btnLight) btnLight.classList.toggle('active', isLight);
+}
+
+// --- 事件监听系统 ---
 function setupUI() {
+  // 折叠开关
   const panel = document.getElementById('control-panel');
   const togglePanelBtn = document.getElementById('toggle-panel');
-
   if (togglePanelBtn && panel) {
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('panel') === 'open' || (window.innerWidth >= 1100 && urlParams.get('panel') !== 'closed')) {
@@ -313,7 +543,7 @@ function setupUI() {
     });
   }
 
-  // 0. 蒙尘之罪专属时间与物理控制绑定
+  // 时停/暂停
   const btnTimePause = document.getElementById('btn-time-pause');
   const topBtnPause = document.getElementById('top-btn-pause');
 
@@ -343,7 +573,6 @@ function setupUI() {
   if (btnTimePause) btnTimePause.addEventListener('click', toggleGlobalPause);
   if (topBtnPause) topBtnPause.addEventListener('click', toggleGlobalPause);
 
-  // 全局空格键快捷时停
   window.addEventListener('keydown', (e) => {
     if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'SELECT') {
       e.preventDefault();
@@ -351,57 +580,118 @@ function setupUI() {
     }
   });
 
-  const goldTimeScaleSlider = document.getElementById('gold-timescale-slider');
-  const goldTimeScaleVal = document.getElementById('gold-timescale-val');
-  if (goldTimeScaleSlider) {
-    goldTimeScaleSlider.addEventListener('input', (e) => {
-      const v = parseFloat(e.target.value);
-      if (goldFallSystem) goldFallSystem.setTimeScale(v);
-      if (goldTimeScaleVal) goldTimeScaleVal.innerText = `${v.toFixed(2)}x`;
+  // 卡片 1: 预设下拉
+  const presetSelect = document.getElementById('preset-select');
+  if (presetSelect) {
+    presetSelect.addEventListener('change', (e) => {
+      applyPreset(e.target.value);
     });
   }
 
-  const goldFallSpeedSlider = document.getElementById('gold-fallspeed-slider');
-  const goldFallSpeedVal = document.getElementById('gold-fallspeed-val');
-  if (goldFallSpeedSlider) {
-    goldFallSpeedSlider.addEventListener('input', (e) => {
-      const v = parseFloat(e.target.value);
-      if (goldFallSystem) goldFallSystem.setFallSpeedFactor(v);
-      if (goldFallSpeedVal) goldFallSpeedVal.innerText = `${v.toFixed(1)}x`;
+  // 卡片 2: 发射源
+  const btnMoon = document.getElementById('btn-emitter-moon');
+  const btnSky = document.getElementById('btn-emitter-sky');
+  const moonColorWrap = document.getElementById('moon-color-wrap');
+  const moonColorPicker = document.getElementById('moon-color-picker');
+
+  if (btnMoon && btnSky) {
+    btnMoon.addEventListener('click', () => {
+      btnMoon.classList.add('active');
+      btnSky.classList.remove('active');
+      if (moonColorWrap) moonColorWrap.style.display = 'flex';
+      goldFallSystem.setEmitterType('moon');
+    });
+    btnSky.addEventListener('click', () => {
+      btnSky.classList.add('active');
+      btnMoon.classList.remove('active');
+      if (moonColorWrap) moonColorWrap.style.display = 'none';
+      goldFallSystem.setEmitterType('sky');
     });
   }
 
-  const goldWidthSlider = document.getElementById('gold-width-slider');
-  const goldWidthVal = document.getElementById('gold-width-val');
-  if (goldWidthSlider) {
-    goldWidthSlider.addEventListener('input', (e) => {
-      const v = parseFloat(e.target.value);
-      if (goldFallSystem) goldFallSystem.setStreamWidth(v);
-      if (goldWidthVal) goldWidthVal.innerText = `${v} px`;
+  if (moonColorPicker) {
+    moonColorPicker.addEventListener('input', (e) => {
+      goldFallSystem.setMoonColor(e.target.value);
     });
   }
 
-  const goldRateSlider = document.getElementById('gold-rate-slider');
-  const goldRateVal = document.getElementById('gold-rate-val');
-  if (goldRateSlider) {
-    goldRateSlider.addEventListener('input', (e) => {
+  const streamWidthSlider = document.getElementById('stream-width-slider');
+  const streamWidthVal = document.getElementById('stream-width-val');
+  if (streamWidthSlider) {
+    streamWidthSlider.addEventListener('input', (e) => {
       const v = parseFloat(e.target.value);
-      if (goldFallSystem) goldFallSystem.spawnRate = v;
-      if (goldRateVal) goldRateVal.innerText = `${v.toFixed(1)} /s`;
+      goldFallSystem.setStreamWidth(v);
+      if (streamWidthVal) streamWidthVal.innerText = `${v} px`;
     });
   }
 
-  const goldDissolveSlider = document.getElementById('gold-dissolve-slider');
-  const goldDissolveVal = document.getElementById('gold-dissolve-val');
-  if (goldDissolveSlider) {
-    goldDissolveSlider.addEventListener('input', (e) => {
+  const spawnRateSlider = document.getElementById('spawn-rate-slider');
+  const spawnRateVal = document.getElementById('spawn-rate-val');
+  if (spawnRateSlider) {
+    spawnRateSlider.addEventListener('input', (e) => {
       const v = parseFloat(e.target.value);
-      if (goldFallSystem) goldFallSystem.dissolveY = v;
-      if (goldDissolveVal) goldDissolveVal.innerText = v;
+      goldFallSystem.spawnRate = v;
+      if (spawnRateVal) spawnRateVal.innerText = `${v.toFixed(1)} /s`;
     });
   }
 
-  // 珠宝品类配比联动 (实时百分比换算与物理分流)
+  // 卡片 3: 掉落物料
+  const sandBtn = document.getElementById('sand-toggle-btn');
+  if (sandBtn) {
+    sandBtn.addEventListener('click', () => {
+      const next = !goldFallSystem.sandEnabled;
+      goldFallSystem.setSandEnabled(next);
+      sandBtn.classList.toggle('active', next);
+      sandBtn.innerText = next ? '已启用' : '已关闭';
+    });
+  }
+
+  const colorPickerA = document.getElementById('color-picker-a');
+  const colorPickerB = document.getElementById('color-picker-b');
+  const ratioSlider = document.getElementById('ratio-slider');
+  const ratioVal = document.getElementById('ratio-val');
+
+  function updateSandColors() {
+    const colA = colorPickerA ? colorPickerA.value : '#ffcb1e';
+    const colB = colorPickerB ? colorPickerB.value : '#ffffff';
+    const rA = ratioSlider ? parseFloat(ratioSlider.value) : 0.7;
+    goldFallSystem.setDualColors(colA, colB, rA);
+    if (ratioVal) ratioVal.innerText = `${Math.round(rA * 100)}% : ${Math.round((1 - rA) * 100)}%`;
+  }
+  if (colorPickerA) colorPickerA.addEventListener('input', updateSandColors);
+  if (colorPickerB) colorPickerB.addEventListener('input', updateSandColors);
+  if (ratioSlider) ratioSlider.addEventListener('input', updateSandColors);
+
+  const countSlider = document.getElementById('count-slider');
+  const countVal = document.getElementById('count-val');
+  if (countSlider) {
+    countSlider.addEventListener('input', (e) => {
+      const v = parseInt(e.target.value, 10);
+      goldFallSystem.setParticleCount(v);
+      if (countVal) countVal.innerText = v;
+    });
+  }
+
+  const jewelsBtn = document.getElementById('jewels-toggle-btn');
+  if (jewelsBtn) {
+    jewelsBtn.addEventListener('click', () => {
+      const next = !goldFallSystem.jewelsEnabled;
+      goldFallSystem.setJewelsEnabled(next);
+      jewelsBtn.classList.toggle('active', next);
+      jewelsBtn.innerText = next ? '已启用' : '已关闭';
+    });
+  }
+
+  const coinScaleSlider = document.getElementById('gold-coin-scale-slider');
+  const coinScaleVal = document.getElementById('gold-coin-scale-val');
+  if (coinScaleSlider) {
+    coinScaleSlider.addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
+      goldFallSystem.setCoinScale(v / 100);
+      if (coinScaleVal) coinScaleVal.innerText = `${v}%`;
+    });
+  }
+
   const ratioCoin = document.getElementById('gold-ratio-coin');
   const ratioPearl = document.getElementById('gold-ratio-pearl');
   const ratioGem = document.getElementById('gold-ratio-gem');
@@ -410,222 +700,72 @@ function setupUI() {
   const ratioGemVal = document.getElementById('ratio-gem-val');
   const ratioSummary = document.getElementById('gold-ratio-summary');
 
-  function updateRatioUI() {
+  function updateJewelRatios() {
     const c = parseFloat(ratioCoin?.value || 50);
     const p = parseFloat(ratioPearl?.value || 30);
     const g = parseFloat(ratioGem?.value || 20);
     const total = c + p + g;
-
     let pctC = 0, pctP = 0, pctG = 0;
     if (total > 0) {
       pctC = Math.round((c / total) * 100);
       pctP = Math.round((p / total) * 100);
       pctG = 100 - pctC - pctP;
     }
-
     if (ratioCoinVal) ratioCoinVal.innerText = `${pctC}%`;
     if (ratioPearlVal) ratioPearlVal.innerText = `${pctP}%`;
     if (ratioGemVal) ratioGemVal.innerText = `${pctG}%`;
     if (ratioSummary) ratioSummary.innerText = `${pctC}% : ${pctP}% : ${pctG}%`;
-
-    if (goldFallSystem) {
-      goldFallSystem.setRatios(c, p, g);
-    }
+    goldFallSystem.setRatios(c, p, g);
   }
+  if (ratioCoin) ratioCoin.addEventListener('input', updateJewelRatios);
+  if (ratioPearl) ratioPearl.addEventListener('input', updateJewelRatios);
+  if (ratioGem) ratioGem.addEventListener('input', updateJewelRatios);
 
-  if (ratioCoin) ratioCoin.addEventListener('input', updateRatioUI);
-  if (ratioPearl) ratioPearl.addEventListener('input', updateRatioUI);
-  if (ratioGem) ratioGem.addEventListener('input', updateRatioUI);
-
-  // 金币尺寸 (大小缩放 60% ~ 180%)
-  const goldCoinScaleSlider = document.getElementById('gold-coin-scale-slider');
-  const goldCoinScaleVal = document.getElementById('gold-coin-scale-val');
-  if (goldCoinScaleSlider) {
-    goldCoinScaleSlider.addEventListener('input', (e) => {
-      const v = parseFloat(e.target.value);
-      if (goldFallSystem) goldFallSystem.setCoinScale(v / 100);
-      if (goldCoinScaleVal) goldCoinScaleVal.innerText = `${v}%`;
+  // 卡片 4: 承接物与空间姿态
+  const obsSelect = document.getElementById('obstacle-type-select');
+  if (obsSelect) {
+    obsSelect.addEventListener('change', (e) => {
+      goldFallSystem.setObstacleType(e.target.value);
     });
   }
 
-  // 3D 金樽导流体控制绑定 (开关、高度、倾角、减震缓冲)
-  const obsMeshToggleBtn = document.getElementById('gold-obs-mesh-toggle-btn');
-  let obsMeshVisible = true;
-  if (obsMeshToggleBtn) {
-    obsMeshToggleBtn.addEventListener('click', () => {
-      obsMeshVisible = !obsMeshVisible;
-      if (goldFallSystem) goldFallSystem.setObstacleMeshVisible(obsMeshVisible);
-      if (obsMeshVisible) {
-        obsMeshToggleBtn.classList.add('active');
-        obsMeshToggleBtn.innerText = '实体轮廓: 显示';
-      } else {
-        obsMeshToggleBtn.classList.remove('active');
-        obsMeshToggleBtn.innerText = '实体轮廓: 隐形';
-      }
+  const glassBtn = document.getElementById('glass-toggle-btn');
+  if (glassBtn) {
+    glassBtn.addEventListener('click', () => {
+      const next = !goldFallSystem.glassEnabled;
+      goldFallSystem.setGlassEnabled(next);
+      glassBtn.classList.toggle('active', next);
+      glassBtn.innerText = next ? '碰撞: 已启用' : '碰撞: 已关闭';
     });
   }
 
-  const glassToggleBtn = document.getElementById('gold-glass-toggle-btn');
-  const glassYSlider = document.getElementById('gold-glass-y-slider');
-  const glassYVal = document.getElementById('gold-glass-y-val');
-  const glassPitchSlider = document.getElementById('gold-glass-pitch-slider');
-  const glassPitchVal = document.getElementById('gold-glass-pitch-val');
-  const glassCushionSlider = document.getElementById('gold-glass-cushion-slider');
-  const glassCushionVal = document.getElementById('gold-glass-cushion-val');
-
-  let glassEnabled = true;
-  if (glassToggleBtn) {
-    glassToggleBtn.addEventListener('click', () => {
-      glassEnabled = !glassEnabled;
-      if (goldFallSystem) goldFallSystem.setGlassEnabled(glassEnabled);
-      if (glassEnabled) {
-        glassToggleBtn.classList.add('active');
-        glassToggleBtn.innerText = '已启用';
-      } else {
-        glassToggleBtn.classList.remove('active');
-        glassToggleBtn.innerText = '已关闭';
-      }
+  const obsMeshBtn = document.getElementById('obs-mesh-toggle-btn');
+  if (obsMeshBtn) {
+    obsMeshBtn.addEventListener('click', () => {
+      const next = !goldFallSystem.obstacleMeshVisible;
+      goldFallSystem.setObstacleMeshVisible(next);
+      obsMeshBtn.classList.toggle('active', next);
+      obsMeshBtn.innerText = next ? '实体轮廓: 显示' : '实体轮廓: 隐形';
     });
   }
 
-  // 3D 阻挡物形态切换（高脚金樽 vs 捧金之手 🫴 vs 探云散掌 🌸）
-  const btnObsGlass = document.getElementById('gold-obs-glass');
-  const btnObsHand = document.getElementById('gold-obs-hand');
-  const btnObsReaching = document.getElementById('gold-obs-reaching');
-  const obsBtns = [
-    { el: btnObsGlass, type: 'glass' },
-    { el: btnObsHand, type: 'hand' },
-    { el: btnObsReaching, type: 'reaching' }
-  ];
-  obsBtns.forEach(({ el, type }) => {
-    if (el) {
-      el.addEventListener('click', () => {
-        obsBtns.forEach(item => item.el?.classList.remove('active'));
-        el.classList.add('active');
-        if (goldFallSystem) goldFallSystem.setObstacleType(type);
-      });
-    }
-  });
-
-  // 3D 阻挡物尺寸大小缩放
-  const obsScaleSlider = document.getElementById('gold-obs-scale-slider');
-  const obsScaleVal = document.getElementById('gold-obs-scale-val');
+  const obsScaleSlider = document.getElementById('obs-scale-slider');
+  const obsScaleVal = document.getElementById('obs-scale-val');
   if (obsScaleSlider) {
     obsScaleSlider.addEventListener('input', (e) => {
       const v = parseFloat(e.target.value);
-      if (goldFallSystem) goldFallSystem.setObstacleScale(v / 100);
+      goldFallSystem.setObstacleScale(v / 100);
       if (obsScaleVal) obsScaleVal.innerText = `${v}%`;
     });
   }
 
-  if (glassYSlider) {
-    glassYSlider.addEventListener('input', (e) => {
-      const v = parseFloat(e.target.value);
-      if (goldFallSystem) goldFallSystem.setGlassPosY(v);
-      if (glassYVal) glassYVal.innerText = v;
-    });
-  }
-
-  if (glassPitchSlider) {
-    glassPitchSlider.addEventListener('input', (e) => {
-      const v = parseFloat(e.target.value);
-      if (goldFallSystem) goldFallSystem.setGlassPitch(v);
-      if (glassPitchVal) glassPitchVal.innerText = `${v}°`;
-    });
-  }
-
-  if (glassCushionSlider) {
-    glassCushionSlider.addEventListener('input', (e) => {
-      const v = parseFloat(e.target.value);
-      if (goldFallSystem) goldFallSystem.setGlassCushion(v);
-      if (glassCushionVal) glassCushionVal.innerText = v.toFixed(2);
-    });
-  }
-
-  // 1. 月亮颜色
-  const moonColorPicker = document.getElementById('moon-color-picker');
-  if (moonColorPicker) {
-    moonColorPicker.addEventListener('input', (e) => {
-      updateMoonColor(e.target.value);
-    });
-  }
-
-  // 2. 背景主题切换
-  const btnDark = document.getElementById('theme-dark');
-  const btnLight = document.getElementById('theme-light');
-  if (btnDark && btnLight) {
-    btnDark.addEventListener('click', () => {
-      btnDark.classList.add('active');
-      btnLight.classList.remove('active');
-      setBgTheme('dark');
-    });
-    btnLight.addEventListener('click', () => {
-      btnLight.classList.add('active');
-      btnDark.classList.remove('active');
-      setBgTheme('light');
-    });
-    if (state.bgTheme === 'light') {
-      btnLight.classList.add('active');
-      btnDark.classList.remove('active');
-    }
-  }
-
-  // 3. 粒子双色系统
-  const colorPickerA = document.getElementById('color-picker-a');
-  const colorPickerB = document.getElementById('color-picker-b');
-  const ratioSlider = document.getElementById('ratio-slider');
-  const ratioVal = document.getElementById('ratio-val');
-
-  function updateParticleColors() {
-    state.colorA = colorPickerA.value;
-    state.colorB = colorPickerB.value;
-    state.ratioA = parseFloat(ratioSlider.value);
-    particleSystem.setDualColors(state.colorA, state.colorB, state.ratioA);
-    if (ratioVal) ratioVal.innerText = `${Math.round(state.ratioA * 100)}% : ${Math.round((1 - state.ratioA) * 100)}%`;
-  }
-
-  if (colorPickerA) {
-    colorPickerA.value = state.colorA;
-    colorPickerA.addEventListener('input', updateParticleColors);
-  }
-  if (colorPickerB) {
-    colorPickerB.value = state.colorB;
-    colorPickerB.addEventListener('input', updateParticleColors);
-  }
-  if (ratioSlider) {
-    ratioSlider.value = state.ratioA;
-    ratioSlider.addEventListener('input', updateParticleColors);
-  }
-
-  // 4. 几何形状预设
-  const presetSelect = document.getElementById('preset-select');
-  if (presetSelect) {
-    presetSelect.value = state.preset;
-    presetSelect.addEventListener('change', (e) => {
-      state.preset = e.target.value;
-      rebuildObstacle();
-    });
-  }
-
-  // 4.1 几何形状大小缩放
-  const scaleSlider = document.getElementById('scale-slider');
-  const scaleVal = document.getElementById('scale-val');
-  if (scaleSlider) {
-    scaleSlider.value = state.scale;
-    if (scaleVal) scaleVal.innerText = `${Math.round(state.scale * 100)}%`;
-    scaleSlider.addEventListener('input', (e) => {
-      state.scale = parseFloat(e.target.value);
-      if (scaleVal) scaleVal.innerText = `${Math.round(state.scale * 100)}%`;
-    });
-  }
-
-  // 5. 空间位置与朝向微调
   const posXSlider = document.getElementById('pos-x-slider');
   const posXVal = document.getElementById('pos-x-val');
   if (posXSlider) {
     posXSlider.addEventListener('input', (e) => {
-      state.offset.x = parseFloat(e.target.value);
-      if (posXVal) posXVal.innerText = state.offset.x;
+      const v = parseFloat(e.target.value);
+      goldFallSystem.setGlassPosX(v);
+      if (posXVal) posXVal.innerText = v;
     });
   }
 
@@ -633,8 +773,9 @@ function setupUI() {
   const posYVal = document.getElementById('pos-y-val');
   if (posYSlider) {
     posYSlider.addEventListener('input', (e) => {
-      state.offset.y = parseFloat(e.target.value);
-      if (posYVal) posYVal.innerText = state.offset.y;
+      const v = parseFloat(e.target.value);
+      goldFallSystem.setGlassPosY(v);
+      if (posYVal) posYVal.innerText = v;
     });
   }
 
@@ -642,8 +783,9 @@ function setupUI() {
   const tiltPitchVal = document.getElementById('tilt-pitch-val');
   if (tiltPitchSlider) {
     tiltPitchSlider.addEventListener('input', (e) => {
-      state.tilt.pitch = parseFloat(e.target.value) * (Math.PI / 180);
-      if (tiltPitchVal) tiltPitchVal.innerText = `${e.target.value}°`;
+      const v = parseFloat(e.target.value);
+      goldFallSystem.setGlassPitch(v);
+      if (tiltPitchVal) tiltPitchVal.innerText = `${v}°`;
     });
   }
 
@@ -651,19 +793,9 @@ function setupUI() {
   const facingYawVal = document.getElementById('facing-yaw-val');
   if (facingYawSlider) {
     facingYawSlider.addEventListener('input', (e) => {
-      state.tilt.yaw = parseFloat(e.target.value) * (Math.PI / 180);
-      if (facingYawVal) facingYawVal.innerText = `${e.target.value}°`;
-    });
-  }
-
-  // 6. 基础力学与控制参数
-  const countSlider = document.getElementById('count-slider');
-  const countVal = document.getElementById('count-val');
-  if (countSlider) {
-    countSlider.addEventListener('input', (e) => {
-      state.particleCount = parseInt(e.target.value, 10);
-      particleSystem.activeCount = state.particleCount;
-      if (countVal) countVal.innerText = state.particleCount;
+      const v = parseFloat(e.target.value);
+      goldFallSystem.setGlassYaw(v);
+      if (facingYawVal) facingYawVal.innerText = `${v}°`;
     });
   }
 
@@ -671,8 +803,62 @@ function setupUI() {
   const speedVal = document.getElementById('speed-val');
   if (speedSlider) {
     speedSlider.addEventListener('input', (e) => {
-      state.rotSpeed = parseFloat(e.target.value);
-      if (speedVal) speedVal.innerText = state.rotSpeed.toFixed(3);
+      const v = parseFloat(e.target.value);
+      goldFallSystem.rotSpeed = v;
+      if (speedVal) speedVal.innerText = v.toFixed(3);
+    });
+  }
+
+  const cushionSlider = document.getElementById('glass-cushion-slider');
+  const cushionVal = document.getElementById('glass-cushion-val');
+  if (cushionSlider) {
+    cushionSlider.addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
+      goldFallSystem.setGlassCushion(v);
+      if (cushionVal) cushionVal.innerText = v.toFixed(2);
+    });
+  }
+
+  const toggleRotateBtn = document.getElementById('toggle-rotate');
+  if (toggleRotateBtn) {
+    toggleRotateBtn.addEventListener('click', () => {
+      const next = !goldFallSystem.autoRotate;
+      goldFallSystem.setAutoRotate(next);
+      toggleRotateBtn.classList.toggle('active', next);
+      toggleRotateBtn.innerText = next ? '自转: 运行中' : '自转: 已暂停';
+    });
+  }
+
+  const resetTransformBtn = document.getElementById('reset-transform');
+  if (resetTransformBtn) {
+    resetTransformBtn.addEventListener('click', () => {
+      goldFallSystem.resetObstaclePose();
+      if (obsScaleSlider) { obsScaleSlider.value = 100; if (obsScaleVal) obsScaleVal.innerText = '100%'; }
+      if (posXSlider) { posXSlider.value = 0; if (posXVal) posXVal.innerText = 0; }
+      if (posYSlider) { posYSlider.value = -95; if (posYVal) posYVal.innerText = -95; }
+      if (tiltPitchSlider) { tiltPitchSlider.value = 24; if (tiltPitchVal) tiltPitchVal.innerText = '24°'; }
+      if (facingYawSlider) { facingYawSlider.value = 0; if (facingYawVal) facingYawVal.innerText = '0°'; }
+    });
+  }
+
+  // 卡片 5: 动力学与终点
+  const timeScaleSlider = document.getElementById('timescale-slider');
+  const timeScaleVal = document.getElementById('timescale-val');
+  if (timeScaleSlider) {
+    timeScaleSlider.addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
+      goldFallSystem.setTimeScale(v);
+      if (timeScaleVal) timeScaleVal.innerText = `${v.toFixed(2)}x`;
+    });
+  }
+
+  const fallSpeedSlider = document.getElementById('fallspeed-slider');
+  const fallSpeedVal = document.getElementById('fallspeed-val');
+  if (fallSpeedSlider) {
+    fallSpeedSlider.addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
+      goldFallSystem.setFallSpeedFactor(v);
+      if (fallSpeedVal) fallSpeedVal.innerText = `${v.toFixed(1)}x`;
     });
   }
 
@@ -680,60 +866,38 @@ function setupUI() {
   const gravityVal = document.getElementById('gravity-val');
   if (gravitySlider) {
     gravitySlider.addEventListener('input', (e) => {
-      state.gravity = parseFloat(e.target.value);
-      if (gravityVal) gravityVal.innerText = state.gravity.toFixed(2);
+      const v = parseFloat(e.target.value);
+      goldFallSystem.setGravity(v);
+      if (gravityVal) gravityVal.innerText = v.toFixed(2);
     });
   }
 
-  const autoRotateBtn = document.getElementById('toggle-rotate');
-  if (autoRotateBtn) {
-    autoRotateBtn.addEventListener('click', () => {
-      state.autoRotate = !state.autoRotate;
-      autoRotateBtn.innerText = state.autoRotate ? '自转: 运行中' : '自转: 已暂停';
-      autoRotateBtn.classList.toggle('active', state.autoRotate);
+  const dissolveSlider = document.getElementById('dissolve-slider');
+  const dissolveVal = document.getElementById('dissolve-val');
+  if (dissolveSlider) {
+    dissolveSlider.addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
+      goldFallSystem.dissolveY = v;
+      if (dissolveVal) dissolveVal.innerText = v;
     });
   }
 
-  const toggleGeomBtn = document.getElementById('toggle-geom');
-  if (toggleGeomBtn) {
-    toggleGeomBtn.addEventListener('click', () => {
-      state.showGeometry = !state.showGeometry;
-      toggleGeomBtn.innerText = state.showGeometry ? '实体轮廓: 显示' : '实体轮廓: 隐形';
-      toggleGeomBtn.classList.toggle('active', state.showGeometry);
-      rebuildObstacle();
-    });
-  }
+  const btnDark = document.getElementById('theme-dark');
+  const btnLight = document.getElementById('theme-light');
+  if (btnDark) btnDark.addEventListener('click', () => setTheme('dark'));
+  if (btnLight) btnLight.addEventListener('click', () => setTheme('light'));
 
   const resetCamBtn = document.getElementById('reset-camera');
   if (resetCamBtn) {
     resetCamBtn.addEventListener('click', () => {
-      camera.position.set(0, 0, 860);
-      controls.target.set(0, -30, 0);
+      camera.position.set(0, -15, 620);
+      controls.target.set(0, -45, 0);
       controls.update();
-    });
-  }
-
-  const resetTransformBtn = document.getElementById('reset-transform');
-  if (resetTransformBtn) {
-    resetTransformBtn.addEventListener('click', () => {
-      state.offset.x = 0;
-      state.offset.y = 0;
-      state.offset.z = 0;
-      state.tilt.pitch = 0;
-      state.tilt.yaw = 0;
-      state.tilt.roll = 0;
-      state.scale = 1.0;
-
-      if (scaleSlider) { scaleSlider.value = 1.0; if (scaleVal) scaleVal.innerText = '100%'; }
-      if (posXSlider) { posXSlider.value = 0; if (posXVal) posXVal.innerText = 0; }
-      if (posYSlider) { posYSlider.value = 0; if (posYVal) posYVal.innerText = 0; }
-      if (tiltPitchSlider) { tiltPitchSlider.value = 0; if (tiltPitchVal) tiltPitchVal.innerText = '0°'; }
-      if (facingYawSlider) { facingYawSlider.value = 0; if (facingYawVal) facingYawVal.innerText = '0°'; }
     });
   }
 }
 
-// --- 外部 3D 模型 (.obj) 拖入 ---
+// --- 外部 3D 模型 (.obj) 拖拽导入 ---
 function setupDragAndDrop() {
   const dropZone = container;
   const loader = new OBJLoader();
@@ -758,38 +922,41 @@ function setupDragAndDrop() {
           const size = new THREE.Vector3();
           box.getSize(size);
           const maxDim = Math.max(size.x, size.y, size.z);
-          const scale = 300.0 / maxDim;
+          const scale = 260.0 / (maxDim || 1);
           obj.scale.set(scale, scale, scale);
 
           const center = new THREE.Vector3();
           box.getCenter(center);
-          obj.position.set(-center.x * scale, -center.y * scale - 30, -center.z * scale);
+          obj.position.set(-center.x * scale, -center.y * scale, -center.z * scale);
 
-          while (obstacleGroup.children.length > 0) {
-            obstacleGroup.remove(obstacleGroup.children[0]);
-          }
-
-          const isLight = state.bgTheme === 'light';
           const mat = new THREE.MeshStandardMaterial({
-            color: isLight ? 0xdddddd : 0x060606,
-            roughness: 0.9,
-            metalness: 0.1
+            color: 0xddc075,
+            roughness: 0.35,
+            metalness: 0.65
           });
 
           obj.traverse((child) => {
             if (child.isMesh) {
               child.material = mat;
               child.geometry.computeVertexNormals();
-              customMesh = child;
             }
           });
 
-          obstacleGroup.add(obj);
-          currentConfig = null;
-          state.preset = 'custom';
+          goldFallSystem.setCustomMesh(obj);
+          goldFallSystem.setObstacleType('custom');
 
+          const obsSelect = document.getElementById('obstacle-type-select');
+          if (obsSelect) {
+            const customOpt = obsSelect.querySelector('option[value="custom"]');
+            if (customOpt) customOpt.disabled = false;
+            obsSelect.value = 'custom';
+          }
           const presetSelect = document.getElementById('preset-select');
-          if (presetSelect) presetSelect.value = 'custom';
+          if (presetSelect) {
+            const customPresetOpt = presetSelect.querySelector('option[value="custom"]');
+            if (customPresetOpt) customPresetOpt.disabled = false;
+            presetSelect.value = 'custom';
+          }
         } catch (err) {
           console.error('加载 OBJ 模型失败:', err);
         }

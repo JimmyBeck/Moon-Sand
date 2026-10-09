@@ -2,12 +2,19 @@
 node_modules/
 .pnpm-store/
 
-# Production build
+# Production build & cache
 dist/
 dist-ssr/
+build/
+.cache/
+
+# Local Environment files
+.env*
+!.env.example
 
 # Editor / OS
 .DS_Store
+Thumbs.db
 .idea/
 .vscode/
 *.local

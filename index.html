@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>月亮流沙 · 崽崽</title>
+  <title>月亮流沙V2：蒙尘之罪</title>
   <style>
     :root {
       --bg: #000000;
@@ -136,7 +136,7 @@
 
     /* PC 端独立控制面板（位于画布右侧，独立占位，展开时完全不遮挡主图） */
     .control-panel {
-      width: 295px;
+      width: 320px;
       height: min(94vh, 920px);
       overflow-y: auto;
       background: var(--card-bg);
@@ -193,20 +193,24 @@
       gap: 7px;
     }
 
-    #goldfall-section {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
     .panel-card {
       padding: 12px;
       background: rgba(255, 203, 30, 0.05);
-      border-radius: 8px;
+      border-radius: 10px;
       border: 1px solid rgba(255, 203, 30, 0.16);
       display: flex;
       flex-direction: column;
       gap: 10px;
+    }
+
+    .panel-card-inner {
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
     }
 
     .control-label {
@@ -384,7 +388,7 @@
     <!-- 主画框容器（保持 3:4 比例，无任何遮挡） -->
     <div id="canvas-container">
       <div class="top-bar">
-        <div class="title-tag">👑 蒙尘之罪 · 珠宝下落与流沙消融</div>
+        <div class="title-tag">👑 月亮流沙V2：蒙尘之罪</div>
         <div style="display:flex; gap:8px;">
           <button id="top-btn-pause" class="panel-toggle-btn" style="color:var(--accent-gold); border-color:var(--accent-gold);">⏸ 暂停 (Space)</button>
           <button id="toggle-panel" class="panel-toggle-btn">参数面板</button>
@@ -395,75 +399,116 @@
     <!-- 控制面板（PC 端独立排列在右侧） -->
     <aside id="control-panel" class="control-panel collapsed">
       
-      <!-- 0. 蒙尘之罪·专属动态参数 -->
-      <div id="goldfall-section">
-        <div class="panel-section-title">蒙尘之罪流沙控制</div>
+      <!-- 🌟 卡片 1: 场景预设推荐 -->
+      <div class="panel-card">
+        <div class="control-label" style="font-weight:700; color:var(--accent-gold);">
+          <span>🌟 场景预设推荐</span>
+        </div>
+        <div class="control-item">
+          <div class="control-label"><span>一键模版方案</span></div>
+          <select id="preset-select">
+            <option value="goldfall" selected>👑 蒙尘之罪 (虚空倾泻 + 珠宝 + 高脚金樽)</option>
+            <option value="moon_classic">🏛️ 月下阶梯拱券 (金月 + 双色流沙 + 阶梯拱券)</option>
+            <option value="moon_hand">🫴 月下捧金 (金月 + 金沙/珍珠/金币 + 捧金手)</option>
+            <option value="sky_reaching">🌸 探云落玉 (虚空 + 珍珠宝石 + 探云散掌)</option>
+            <option value="colonnade">🏛️ 罗马长廊 (金月 + 双色金沙 + 罗马长廊)</option>
+            <option value="hourglass">⏳ 双曲沙漏 (金月 + 双色流沙 + 双曲沙漏)</option>
+            <option value="wineglass">🍷 独酌孤杯 (金月 + 双色流沙 + 高脚孤杯)</option>
+            <option value="custom" disabled>📁 自定义 OBJ 模型 (拖入生效)</option>
+          </select>
+        </div>
+        <div style="font-size:10px; color:var(--text-muted); line-height:1.4;">
+          💡 切换预设将一键应用参数组合，下方 5 大模块仍可随时自由单独微调。
+        </div>
+      </div>
 
-        <!-- 卡片 1: 运动与时间力学 -->
-        <div class="panel-card">
-          <div class="control-label" style="font-weight:600; color:var(--accent-gold);">
-            <span>⏱️ 运动与时间力学</span>
-          </div>
-
-          <div class="control-item">
-            <button id="btn-time-pause" class="action-btn" style="width:100%; font-size:12px; font-weight:600; padding:8px 0; background:rgba(255,203,30,0.18); border-color:var(--accent-gold); color:var(--accent-gold); cursor:pointer;">
-              ⏸ 暂停 / 时间停止 (Space)
-            </button>
-          </div>
-
-          <div class="control-item">
-            <div class="control-label">
-              <span>时间流速 (速度倍率)</span>
-              <span id="gold-timescale-val">1.0x</span>
-            </div>
-            <input id="gold-timescale-slider" type="range" min="0.1" max="2.0" step="0.05" value="1.0">
-          </div>
-
-          <div class="control-item">
-            <div class="control-label">
-              <span>下落速度 (物理惯性/重力)</span>
-              <span id="gold-fallspeed-val">1.0x</span>
-            </div>
-            <input id="gold-fallspeed-slider" type="range" min="0.3" max="2.5" step="0.1" value="1.0">
+      <!-- 🌕 卡片 2: 发射源与天顶 -->
+      <div class="panel-card">
+        <div class="control-label" style="font-weight:700; color:var(--accent-gold);">
+          <span>🌕 发射源与天顶</span>
+        </div>
+        <div class="control-item">
+          <div class="control-label"><span>发射源载体</span></div>
+          <div class="btn-group">
+            <button id="btn-emitter-moon" class="action-btn">🌕 月轮天体</button>
+            <button id="btn-emitter-sky" class="action-btn active">🌌 虚空天幕</button>
           </div>
         </div>
 
-        <!-- 卡片 2: 流沙形态与消融 -->
-        <div class="panel-card">
-          <div class="control-label" style="font-weight:600; color:var(--accent-gold);">
-            <span>✨ 流沙形态与频度</span>
-          </div>
-
-          <div class="control-item">
-            <div class="control-label">
-              <span>流沙整体宽度</span>
-              <span id="gold-width-val">90 px</span>
-            </div>
-            <input id="gold-width-slider" type="range" min="40" max="240" step="5" value="90">
-          </div>
-
-          <div class="control-item">
-            <div class="control-label">
-              <span>下落生成频度</span>
-              <span id="gold-rate-val">2.5 /s</span>
-            </div>
-            <input id="gold-rate-slider" type="range" min="0.8" max="5.0" step="0.2" value="2.5">
-          </div>
-
-          <div class="control-item">
-            <div class="control-label">
-              <span>流沙消融高度</span>
-              <span id="gold-dissolve-val">-80</span>
-            </div>
-            <input id="gold-dissolve-slider" type="range" min="-180" max="60" step="10" value="-80">
+        <div class="control-item" id="moon-color-wrap" style="display:none;">
+          <div class="control-label"><span>月亮颜色</span></div>
+          <div class="color-picker-wrap">
+            <input type="color" id="moon-color-picker" value="#ffcb1e">
+            <span>选择月色</span>
           </div>
         </div>
 
-        <!-- 卡片 3: 珠宝品类配比 -->
-        <div class="panel-card">
+        <div class="control-item">
           <div class="control-label">
-            <span style="font-weight:600; color:var(--accent-gold);">💎 珠宝品类配比</span>
-            <span id="gold-ratio-summary" style="font-size:11px; color:var(--accent-gold); font-weight:600;">50% : 30% : 20%</span>
+            <span>发射整体宽度</span>
+            <span id="stream-width-val">90 px</span>
+          </div>
+          <input id="stream-width-slider" type="range" min="40" max="240" step="5" value="90">
+        </div>
+
+        <div class="control-item">
+          <div class="control-label">
+            <span>下落生成频度</span>
+            <span id="spawn-rate-val">2.5 /s</span>
+          </div>
+          <input id="spawn-rate-slider" type="range" min="0.8" max="5.0" step="0.2" value="2.5">
+        </div>
+      </div>
+
+      <!-- 💎 卡片 3: 掉落物料组合 -->
+      <div class="panel-card">
+        <div class="control-label" style="font-weight:700; color:var(--accent-gold);">
+          <span>💎 掉落物料组合</span>
+        </div>
+
+        <!-- 3.1 微观流沙粒子 -->
+        <div class="panel-card-inner">
+          <div class="control-label">
+            <span style="font-weight:600; color:var(--accent-gold);">✨ 微观流沙粒子</span>
+            <button id="sand-toggle-btn" class="action-btn active" style="font-size:10px; padding:2px 8px;">已启用</button>
+          </div>
+
+          <div class="control-item">
+            <div class="control-label"><span>粒子混色</span></div>
+            <div class="color-row">
+              <div class="color-picker-wrap">
+                <input type="color" id="color-picker-a" value="#ffcb1e">
+                <span>主色</span>
+              </div>
+              <div class="color-picker-wrap">
+                <input type="color" id="color-picker-b" value="#ffffff">
+                <span>副色</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="control-item">
+            <div class="control-label">
+              <span>主副色配比</span>
+              <span id="ratio-val">70% : 30%</span>
+            </div>
+            <input id="ratio-slider" type="range" min="0" max="1" step="0.05" value="0.7">
+          </div>
+
+          <div class="control-item">
+            <div class="control-label">
+              <span>粒子密度</span>
+              <span id="count-val">4200</span>
+            </div>
+            <input id="count-slider" type="range" min="1500" max="6500" step="100" value="4200">
+          </div>
+        </div>
+
+        <!-- 3.2 宏观珠宝实体 -->
+        <div class="panel-card-inner">
+          <div class="control-label">
+            <span style="font-weight:600; color:var(--accent-gold);">👑 宏观珠宝实体</span>
+            <button id="jewels-toggle-btn" class="action-btn active" style="font-size:10px; padding:2px 8px;">已启用</button>
           </div>
 
           <div class="control-item">
@@ -497,142 +542,49 @@
             </div>
             <input id="gold-ratio-gem" type="range" min="0" max="100" step="5" value="20">
           </div>
-        </div>
 
-        <!-- 卡片 4: 3D 碰撞导流阻挡物 -->
-        <div class="panel-card">
-          <div class="control-label">
-            <span style="font-weight:600; color:var(--accent-gold);">👑 3D 导流阻挡物</span>
-            <div style="display:flex; gap:6px;">
-              <button id="gold-obs-mesh-toggle-btn" class="action-btn active" style="font-size:11px; padding:2px 8px;">实体轮廓: 显示</button>
-              <button id="gold-glass-toggle-btn" class="action-btn active" style="font-size:11px; padding:2px 8px;">已启用</button>
-            </div>
-          </div>
-
-          <div class="control-item">
-            <div class="control-label"><span>形态选项</span></div>
-            <div class="btn-group" id="gold-obs-type-group">
-              <button id="gold-obs-glass" class="action-btn active" style="flex:1; padding:5px 0; font-size:11px;">高脚金樽</button>
-              <button id="gold-obs-hand" class="action-btn" style="flex:1; padding:5px 0; font-size:11px;">捧金之手 🫴</button>
-              <button id="gold-obs-reaching" class="action-btn" style="flex:1; padding:5px 0; font-size:11px;">探云散掌 🌸</button>
-            </div>
-          </div>
-
-          <div class="control-item">
-            <div class="control-label">
-              <span>物体尺寸 (大小缩放)</span>
-              <span id="gold-obs-scale-val">100%</span>
-            </div>
-            <input id="gold-obs-scale-slider" type="range" min="50" max="180" step="5" value="100">
-          </div>
-
-          <div class="control-item">
-            <div class="control-label">
-              <span>物体高度 (Y 轴)</span>
-              <span id="gold-glass-y-val">-95</span>
-            </div>
-            <input id="gold-glass-y-slider" type="range" min="-150" max="-50" step="5" value="-95">
-          </div>
-
-          <div class="control-item">
-            <div class="control-label">
-              <span>导流倾角</span>
-              <span id="gold-glass-pitch-val">24°</span>
-            </div>
-            <input id="gold-glass-pitch-slider" type="range" min="15" max="35" step="1" value="24">
-          </div>
-
-          <div class="control-item">
-            <div class="control-label">
-              <span>减震吸能缓冲 (流沙/水感)</span>
-              <span id="gold-glass-cushion-val">0.04</span>
-            </div>
-            <input id="gold-glass-cushion-slider" type="range" min="0.00" max="0.20" step="0.01" value="0.04">
+          <div class="control-label" style="margin-top:2px;">
+            <span>珠宝比重汇总</span>
+            <span id="gold-ratio-summary" style="font-size:11px; color:var(--accent-gold); font-weight:600;">50% : 30% : 20%</span>
           </div>
         </div>
       </div>
 
-      <!-- 1. 背景与环境设置 -->
-      <div class="panel-section-title">色彩与环境</div>
-
-      <div class="control-item">
-        <div class="control-label"><span>背景主题</span></div>
-        <div class="btn-group">
-          <button id="theme-dark" class="action-btn active">纯黑背景</button>
-          <button id="theme-light" class="action-btn">纯白背景</button>
-        </div>
-      </div>
-
-      <div class="control-item" id="moon-color-wrap">
-        <div class="control-label"><span>月亮颜色</span></div>
-        <div class="color-picker-wrap">
-          <input type="color" id="moon-color-picker" value="#ffcb1e">
-          <span>选择月色</span>
-        </div>
-      </div>
-
-      <!-- 2. 双色粒子系统 (经典预设专属) -->
-      <div id="classic-particle-section">
-        <div class="panel-section-title">双色粒子流沙</div>
-
-        <div class="control-item">
-          <div class="control-label"><span>粒子混色</span></div>
-          <div class="color-row">
-            <div class="color-picker-wrap">
-              <input type="color" id="color-picker-a" value="#ffcb1e">
-              <span>主色</span>
-            </div>
-            <div class="color-picker-wrap">
-              <input type="color" id="color-picker-b" value="#ffffff">
-              <span>副色</span>
-            </div>
+      <!-- 🏛️ 卡片 4: 承接物与空间姿态 -->
+      <div class="panel-card">
+        <div class="control-label" style="font-weight:700; color:var(--accent-gold);">
+          <span>🏛️ 承接物与空间姿态</span>
+          <div style="display:flex; gap:6px;">
+            <button id="glass-toggle-btn" class="action-btn active" style="font-size:10px; padding:2px 8px;">碰撞: 已启用</button>
+            <button id="obs-mesh-toggle-btn" class="action-btn active" style="font-size:10px; padding:2px 8px;">实体轮廓: 显示</button>
           </div>
         </div>
 
         <div class="control-item">
-          <div class="control-label">
-            <span>主副色配比</span>
-            <span id="ratio-val">70% : 30%</span>
-          </div>
-          <input id="ratio-slider" type="range" min="0" max="1" step="0.05" value="0.7">
+          <div class="control-label"><span>承接物形态</span></div>
+          <select id="obstacle-type-select">
+            <option value="hand">捧金之手 🫴</option>
+            <option value="reaching">探云散掌 🌸</option>
+            <option value="glass" selected>高脚金樽 👑</option>
+            <option value="classic">阶梯错落拱券 🏛️</option>
+            <option value="colonnade">罗马拱门长廊 🏛️</option>
+            <option value="hourglass">双曲沙漏 ⏳</option>
+            <option value="wineglass">独酌孤杯 🍷</option>
+            <option value="custom" disabled>外部导入 OBJ 模型</option>
+          </select>
         </div>
 
         <div class="control-item">
           <div class="control-label">
-            <span>粒子密度</span>
-            <span id="count-val">4200</span>
+            <span>物体尺寸 (大小缩放)</span>
+            <span id="obs-scale-val">100%</span>
           </div>
-          <input id="count-slider" type="range" min="1500" max="6500" step="100" value="4200">
-        </div>
-      </div>
-
-      <!-- 3. 几何形状与空间姿态 -->
-      <div class="panel-section-title">三维形状预设</div>
-
-      <div class="control-item">
-        <div class="control-label"><span>几何形状</span></div>
-        <select id="preset-select">
-          <option value="goldfall" selected>👑 蒙尘之罪 (金币/珍珠/宝石流沙)</option>
-          <option value="classic">阶梯错落拱券</option>
-          <option value="wineglass">独酌高脚杯 (酒杯造型)</option>
-          <option value="hourglass">双曲沙漏 (流砂造型)</option>
-          <option value="colonnade">罗马拱门长廊</option>
-          <option value="custom" disabled>自定义 OBJ 模型</option>
-        </select>
-      </div>
-
-      <div id="classic-transform-wrap">
-        <div class="control-item">
-          <div class="control-label">
-            <span>形状大小</span>
-            <span id="scale-val">100%</span>
-          </div>
-          <input id="scale-slider" type="range" min="0.6" max="1.1" step="0.05" value="1.0">
+          <input id="obs-scale-slider" type="range" min="50" max="180" step="5" value="100">
         </div>
 
         <div class="control-item">
           <div class="control-label">
-            <span>水平偏移 (X)</span>
+            <span>水平偏移 (X 轴)</span>
             <span id="pos-x-val">0</span>
           </div>
           <input id="pos-x-slider" type="range" min="-90" max="90" step="2" value="0">
@@ -640,18 +592,18 @@
 
         <div class="control-item">
           <div class="control-label">
-            <span>落差高度 (Y)</span>
-            <span id="pos-y-val">0</span>
+            <span>空间高度 (Y 轴)</span>
+            <span id="pos-y-val">-95</span>
           </div>
-          <input id="pos-y-slider" type="range" min="-120" max="100" step="2" value="0">
+          <input id="pos-y-slider" type="range" min="-150" max="100" step="2" value="-95">
         </div>
 
         <div class="control-item">
           <div class="control-label">
-            <span>俯仰倾角 (Pitch)</span>
-            <span id="tilt-pitch-val">0°</span>
+            <span>导流倾角 (Pitch)</span>
+            <span id="tilt-pitch-val">24°</span>
           </div>
-          <input id="tilt-pitch-slider" type="range" min="-40" max="40" step="2" value="0">
+          <input id="tilt-pitch-slider" type="range" min="-40" max="40" step="1" value="24">
         </div>
 
         <div class="control-item">
@@ -661,11 +613,6 @@
           </div>
           <input id="facing-yaw-slider" type="range" min="0" max="360" step="5" value="0">
         </div>
-      </div>
-
-      <!-- 4. 动力学控制 (经典预设专属) -->
-      <div id="classic-dynamics-wrap">
-        <div class="panel-section-title">动力学控制</div>
 
         <div class="control-item">
           <div class="control-label">
@@ -677,31 +624,79 @@
 
         <div class="control-item">
           <div class="control-label">
-            <span>重力加速度</span>
+            <span>减震吸能缓冲 (流沙/水感)</span>
+            <span id="glass-cushion-val">0.04</span>
+          </div>
+          <input id="glass-cushion-slider" type="range" min="0.00" max="0.20" step="0.01" value="0.04">
+        </div>
+
+        <div class="btn-group">
+          <button id="toggle-rotate" class="action-btn active">自转: 运行中</button>
+          <button id="reset-transform" class="action-btn">重置物体姿态</button>
+        </div>
+      </div>
+
+      <!-- ⏱️ 卡片 5: 动力学与终点池 -->
+      <div class="panel-card">
+        <div class="control-label" style="font-weight:700; color:var(--accent-gold);">
+          <span>⏱️ 动力学与终点池</span>
+        </div>
+
+        <div class="control-item">
+          <button id="btn-time-pause" class="action-btn" style="width:100%; font-size:12px; font-weight:600; padding:8px 0; background:rgba(255,203,30,0.18); border-color:var(--accent-gold); color:var(--accent-gold); cursor:pointer;">
+            ⏸ 暂停 / 时间停止 (Space)
+          </button>
+        </div>
+
+        <div class="control-item">
+          <div class="control-label">
+            <span>时间流速 (速度倍率)</span>
+            <span id="timescale-val">1.0x</span>
+          </div>
+          <input id="timescale-slider" type="range" min="0.1" max="2.0" step="0.05" value="1.0">
+        </div>
+
+        <div class="control-item">
+          <div class="control-label">
+            <span>下落速度 (惯性倍率)</span>
+            <span id="fallspeed-val">1.0x</span>
+          </div>
+          <input id="fallspeed-slider" type="range" min="0.3" max="2.5" step="0.1" value="1.0">
+        </div>
+
+        <div class="control-item">
+          <div class="control-label">
+            <span>基础重力加速度</span>
             <span id="gravity-val">0.12</span>
           </div>
           <input id="gravity-slider" type="range" min="0.04" max="0.30" step="0.01" value="0.12">
         </div>
 
-        <div class="btn-group">
-          <button id="toggle-rotate" class="action-btn active">自转: 运行中</button>
-          <button id="toggle-geom" class="action-btn">实体轮廓: 隐形</button>
+        <div class="control-item">
+          <div class="control-label">
+            <span>流沙消融高度</span>
+            <span id="dissolve-val">-80</span>
+          </div>
+          <input id="dissolve-slider" type="range" min="-180" max="60" step="10" value="-80">
         </div>
 
-        <div class="btn-group">
-          <button id="reset-transform" class="action-btn">重置物体姿态</button>
+        <div class="control-item">
+          <div class="control-label"><span>背景主题</span></div>
+          <div class="btn-group">
+            <button id="theme-dark" class="action-btn active">纯黑背景</button>
+            <button id="theme-light" class="action-btn">纯白背景</button>
+          </div>
         </div>
-      </div>
 
-      <div style="margin-top:14px;">
-        <button id="reset-camera" class="action-btn" style="width:100%;">复位 3D 视角</button>
+        <div>
+          <button id="reset-camera" class="action-btn" style="width:100%; margin-top:2px;">复位 3D 视角</button>
+        </div>
       </div>
 
       <div class="drop-hint">
-        💡 按住鼠标左键可 360° 旋转视角，滚轮缩放<br>
-        随时按键盘空格键（Space）暂停定格画面
+        💡 支持外部 .obj 3D 模型直接拖拽进画面<br>
+        💡 鼠标左键 360° 旋转，滚轮缩放，按空格 (Space) 随时暂停
       </div>
-
 
     </aside>
   </div>
